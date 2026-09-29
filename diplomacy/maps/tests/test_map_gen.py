@@ -27,6 +27,20 @@ from diplomacy.utils.convoy_paths import INTERNAL_CACHE_PATH, get_file_md5
 
 MODULE_PATH = sys.modules['diplomacy'].__path__[0]
 
+# Runs first (pytest keeps file order): fails fast instead of generating convoy paths below.
+def test_internal_cache():
+    """ Tests that every map is in the internal (shipped) cache.
+        A map missing from it makes Map() generate convoy paths on first load: minutes of CPU on all cores,
+        which exhausts the PythonAnywhere CPU quota. Remove such maps, or regenerate the internal cache. """
+    maps = glob.glob(os.path.join(MODULE_PATH, 'maps', '*.map'))
+    assert maps, 'Expected maps to be found.'
+    assert os.path.exists(INTERNAL_CACHE_PATH), 'Expected internal cache to exist'
+    with open(INTERNAL_CACHE_PATH, 'rb') as cache_file:
+        internal_cache = pickle.load(cache_file)
+    missing = [os.path.basename(current_map) for current_map in maps
+               if get_file_md5(current_map) not in internal_cache]
+    assert not missing, 'Maps not in internal convoy paths cache: %s' % missing
+
 def test_map_creation():
     """ Tests for map creation """
     maps = glob.glob(os.path.join(MODULE_PATH, 'maps', '*.map'))
@@ -45,20 +59,3 @@ def test_map_with_full_path():
         this_map = Map(current_map)
         assert this_map.error == [], 'Map %s should have no errors' % current_map
         del this_map
-
-def test_internal_cache():
-    """ Tests that all maps with a SVG are in the internal cache """
-    maps = glob.glob(os.path.join(MODULE_PATH, 'maps', '*.map'))
-    assert maps, 'Expected maps to be found.'
-    assert os.path.exists(INTERNAL_CACHE_PATH), 'Expected internal cache to exist'
-
-    # Checking that maps with a svg are in the internal cache
-    with open(INTERNAL_CACHE_PATH, 'rb') as cache_file:
-        internal_cache = pickle.load(cache_file)
-        for current_map in maps:
-            map_name = current_map[current_map.rfind('/') + 1:].replace('.map', '')
-            this_map = Map(map_name)
-            if not this_map.svg_path:
-                continue
-            assert get_file_md5(current_map) in internal_cache, 'Map "%s" not found in internal cache' % map_name
-            del this_map
