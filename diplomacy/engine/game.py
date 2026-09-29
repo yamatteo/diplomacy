@@ -517,14 +517,6 @@ class Game(Jsonable):
         """ Return True if this game is a server game. """
         return self.role == strings.SERVER_TYPE
 
-    def is_valid_password(self, registration_password):
-        """ Return True if given plain password matches registration password. """
-        if self.registration_password is None:
-            return registration_password is None
-        if registration_password is None:
-            return False
-        return common.is_valid_password(registration_password, self.registration_password)
-
     def is_controlled(self, power_name):
         """ Return True if given power name is currently controlled.
 
@@ -1437,10 +1429,8 @@ class Game(Jsonable):
 
         if self.error:
             if 'IGNORE_ERRORS' not in self.rules:
-                print('The following errors were encountered and were cleared before processing.')
-                for error in self.error:
-                    print('-- %s' % error)
-                print('-' * 32)
+                LOGGER.warning('The following errors were encountered and were cleared before processing: %s',
+                               self.error)
             self.error = []
         self._process()
 

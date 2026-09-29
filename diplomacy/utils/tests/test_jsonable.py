@@ -15,7 +15,7 @@
 #  with this program.  If not, see <https://www.gnu.org/licenses/>.
 # ==============================================================================
 """ Test Jsonable. """
-import ujson as json
+import json
 
 from diplomacy.utils import parsing
 from diplomacy.utils.jsonable import Jsonable

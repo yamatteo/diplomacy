@@ -562,10 +562,16 @@ def test_automatic_draw():
 
 def test_histories():
     """ Test order_history, state_history, message_history and messages. """
-    from diplomacy.server.server_game import ServerGame
+    from diplomacy.engine.message import Message, SYSTEM
     from diplomacy.utils.sorted_dict import SortedDict
     from diplomacy.utils import strings
-    game = ServerGame(status=strings.ACTIVE)
+
+    def new_system_message(game, recipient, body):
+        """ Adds a message sent by the system (as the removed ServerGame.new_system_message did). """
+        game.add_message(Message(phase=game.current_short_phase, sender=SYSTEM, recipient=recipient,
+                                 message=body))
+
+    game = Game(status=strings.ACTIVE)
     assert game.solitaire
     assert not game.n_controls
     assert game.is_game_active
@@ -578,8 +584,8 @@ def test_histories():
     assert not game.message_history
     assert not game.order_history
     assert not game.state_history
-    game.new_system_message('FRANCE', 'Hello France!')
-    game.new_system_message('GLOBAL', 'Hello World!')
+    new_system_message(game, 'FRANCE', 'Hello France!')
+    new_system_message(game, 'GLOBAL', 'Hello World!')
     game.set_orders('FRANCE', ['A PAR H'])
     assert len(game.messages) == 2
     previous_phase = game.get_current_phase()
@@ -592,7 +598,7 @@ def test_histories():
     assert len(game.state_history) == 1
     game.set_orders('AUSTRIA', ['A BUD - GAL'])
     game.set_orders('FRANCE', ['A PAR H'])
-    game.new_system_message('GLOBAL', 'New world.')
+    new_system_message(game, 'GLOBAL', 'New world.')
     assert len(game.messages) == 1
     game.process()
     assert not game.messages
@@ -621,7 +627,7 @@ def test_histories():
     assert all('messages' not in state for state in game.state_history.values())
 
     game_to_json = game.to_dict()
-    game_copy = ServerGame.from_dict(game_to_json)
+    game_copy = Game.from_dict(game_to_json)
     assert list(game.state_history.keys()) == list(game_copy.state_history.keys())
     assert list(game.message_history.keys()) == list(game_copy.message_history.keys())
     assert list(game.order_history.keys()) == list(game_copy.order_history.keys())

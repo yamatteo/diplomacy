@@ -1,7 +1,7 @@
 [project]
 name = "diplomacy-simple"
 version = "0.1.0"
-description = "Simplified Diplomacy web app for a single game among friends (Flask, PythonAnywhere free tier)"
+description = "Simplified Diplomacy (DATC-compliant engine + Flask web app) for a single game among friends"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
 # PythonAnywhere web apps run on the system Python (3.13 at most, as of 2026);
@@ -16,4 +16,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["webapp"]
+packages = ["diplomacy", "webapp"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["diplomacy", "webapp"]

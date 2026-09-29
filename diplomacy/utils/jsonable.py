@@ -42,7 +42,7 @@
 
 """
 import logging
-import ujson as json
+import json
 
 from diplomacy.utils import exceptions, parsing
 

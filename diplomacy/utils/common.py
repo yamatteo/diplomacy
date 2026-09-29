@@ -14,59 +14,19 @@
 #  You should have received a copy of the GNU Affero General Public License along
 #  with this program.  If not, see <https://www.gnu.org/licenses/>.
 # ==============================================================================
-""" Common utils symbols used in diplomacy network code. """
-import base64
+""" Common utils symbols used in diplomacy code. """
 import binascii
-import hashlib
-import traceback
 import os
 import re
-import sys
-from datetime import datetime
-
-import bcrypt
+import time
 
 from diplomacy.utils.exceptions import CommonKeyException
-
-# Datetime since timestamp 0.
-EPOCH = datetime.utcfromtimestamp(0)
 
 # Regex used for conversion from camel case to snake case.
 REGEX_CONSECUTIVE_UPPER_CASES = re.compile('[A-Z]{2,}')
 REGEX_LOWER_THEN_UPPER_CASES = re.compile('([a-z0-9])([A-Z])')
 REGEX_UNDERSCORE_THEN_LETTER = re.compile('_([a-z])')
 REGEX_START_BY_LOWERCASE = re.compile('^[a-z]')
-
-def _sub_hash_password(password):
-    """ Hash long password to allow bcrypt to handle password longer than 72 characters.
-        Module private method.
-
-        :param password: password to hash.
-        :return: The hashed password.
-        :rtype: str
-    """
-    # Bcrypt only handles passwords up to 72 characters. We use this hashing method as a work around.
-    # Suggested in bcrypt PyPI page (2018/02/08 12:36 EST): https://pypi.python.org/pypi/bcrypt/3.1.0
-    return base64.b64encode(hashlib.sha256(password.encode('utf-8')).digest())
-
-def is_valid_password(password, hashed):
-    """ Check if password matches hashed.
-
-        :param password: password to check.
-        :param hashed: a password hashed with method hash_password().
-        :return: Indicates if the password matches the hash.
-        :rtype: bool
-    """
-    return bcrypt.checkpw(_sub_hash_password(password), hashed.encode('utf-8'))
-
-def hash_password(password):
-    """ Hash password. Accepts password longer than 72 characters. Public method.
-
-        :param password: The password to hash
-        :return: The hashed password.
-        :rtype: str
-    """
-    return bcrypt.hashpw(_sub_hash_password(password), bcrypt.gensalt(14)).decode('utf-8')
 
 def generate_token(n_bytes=128):
     """ Generate a token with 2 * n_bytes characters (n_bytes bytes encoded in hexadecimal). """
@@ -150,8 +110,7 @@ def timestamp_microseconds():
 
         :rtype: int
     """
-    delta = datetime.now() - EPOCH
-    return (delta.days * 24 * 60 * 60 + delta.seconds) * 1000000 + delta.microseconds
+    return time.time_ns() // 1000
 
 def str_cmp_class(compare_function):
     """ Return a new class to be used as string comparator.
@@ -280,27 +239,3 @@ class StringableCode:
     def format(self, *values):
         """ Format the message of the result """
         return StringableCode(self._code, self._message.format(*values))
-
-class Tornado:
-    """ Utilities for Tornado. """
-
-    @staticmethod
-    def stop_loop_on_callback_error(io_loop):
-        """ Modify exception handler method of given IO loop so that IO loop stops and raises
-            as soon as an exception is thrown from a callback.
-
-            :param io_loop: IO loop
-            :type io_loop: tornado.ioloop.IOLoop
-        """
-
-        def new_cb_exception_handler(callback):
-            """ Callback exception handler used to replace IO loop default exception handler. """
-            #pylint: disable=unused-argument
-            _, exc_value, _ = sys.exc_info()
-            io_loop.stop()
-            traceback.print_tb(exc_value.__traceback__)
-            print(type(exc_value).__name__)
-            print(exc_value)
-            exit(-1)
-
-        io_loop.handle_callback_exception = new_cb_exception_handler

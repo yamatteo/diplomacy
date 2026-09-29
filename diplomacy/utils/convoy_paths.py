@@ -20,14 +20,16 @@
 import collections
 import hashlib
 import glob
+import logging
 import pickle
 import multiprocessing
 import os
 from queue import Queue
 import threading
-import tqdm
 from diplomacy.engine.map import Map
 from diplomacy import settings
+
+LOGGER = logging.getLogger(__name__)
 
 # Using `os.path.expanduser()` to find home directory in a more cross-platform way.
 HOME_DIRECTORY = os.path.expanduser('~')
@@ -45,16 +47,18 @@ INTERNAL_CACHE_PATH = os.path.join(settings.PACKAGE_DIR, 'maps', CACHE_FILE_NAME
 EXTERNAL_CACHE_PATH = os.path.join(HOME_DIRECTORY, '.cache', 'diplomacy', CACHE_FILE_NAME)
 
 def _display_progress_bar(queue, max_loop_iters):
-    """ Displays a progress bar
+    """ Logs generation progress every 10%
 
-        :param queue: Multiprocessing queue to display the progress bar
+        :param queue: Multiprocessing queue receiving the number of completed iterations
         :param max_loop_iters: The expected maximum number of iterations
     """
-    progress_bar = tqdm.tqdm(total=max_loop_iters)
+    done, next_report = 0, 10
     for item in iter(queue.get, None):              # type: int
-        for _ in range(item):
-            progress_bar.update()
-    progress_bar.close()
+        done += item
+        percent = 100 * done // max(max_loop_iters, 1)
+        if percent >= next_report:
+            LOGGER.info('Convoy paths generation: %d%% (%d / %d)', percent, done, max_loop_iters)
+            next_report = percent - percent % 10 + 10
 
 def _get_convoy_paths(map_object, start_location, max_convoy_length, queue):
     """ Returns a list of possible convoy destinations with the required units to get there
@@ -144,8 +148,8 @@ def _build_convoy_paths_cache(map_object, max_convoy_length):
                  the value is a list of convoy paths (start loc, {fleets}, {dest}) of that length for the map
         :type map_object: diplomacy.Map
     """
-    print('Generating convoy paths for "{}"'.format(map_object.name))
-    print('This is an operation that is required the first time a map is loaded. It might take several minutes...\n')
+    LOGGER.warning('Generating convoy paths for "%s" (not in cache). '
+                   'This happens the first time a map is loaded and might take several minutes.', map_object.name)
     coasts = [loc.upper() for loc in map_object.locs if map_object.area_type(loc) in COAST_TYPES and '/' not in loc]
     water_locs = [loc.upper() for loc in map_object.locs if map_object.area_type(loc) in WATER_TYPES]
 
@@ -171,7 +175,7 @@ def _build_convoy_paths_cache(map_object, max_convoy_length):
         buckets[len(fleets)] += [(start, fleets, dests)]
 
     # Returning
-    print('Found {} convoy paths for {}\n'.format(len(results), map_object.name))
+    LOGGER.info('Found %d convoy paths for %s', len(results), map_object.name)
     return buckets
 
 def get_file_md5(file_path):
@@ -210,7 +214,7 @@ def add_to_cache(map_name, max_convoy_length=MAX_CONVOY_LENGTH):
         try:
             cache_data = pickle.load(open(EXTERNAL_CACHE_PATH, 'rb'))
             if cache_data.get('__version__', '') != __VERSION__:
-                print('Upgrading cache from "%s" to "%s"' % (cache_data.get('__version__', '<N/A>'), __VERSION__))
+                LOGGER.info('Upgrading cache from "%s" to "%s"', cache_data.get('__version__', '<N/A>'), __VERSION__)
             else:
                 convoy_paths.update(cache_data)
                 external_convoy_paths.update(cache_data)
@@ -281,6 +285,5 @@ def rebuild_all_maps():
     for file_path in files_path:
         map_name = file_path.replace(settings.PACKAGE_DIR + '/maps/', '').replace('.map', '')
         map_hash = get_file_md5(file_path)
-        print('-' * 80)
-        print('Adding {} (Hash: {}) to cache\n'.format(file_path, map_hash))
+        LOGGER.info('Adding %s (Hash: %s) to cache', file_path, map_hash)
         add_to_cache(map_name)

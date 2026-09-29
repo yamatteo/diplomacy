@@ -15,7 +15,6 @@
 #  with this program.  If not, see <https://www.gnu.org/licenses/>.
 # ==============================================================================
 """ Test for diplomacy network code utils. """
-import ujson as json
 
 from diplomacy.utils import common, exceptions
 
@@ -34,20 +33,6 @@ def assert_equals(expected, computed):
 
     if expected != computed:
         raise AssertionError('\nExpected:\n=========\n%s\n\nComputed:\n=========\n%s\n' % (expected, computed))
-
-def test_hash_password():
-    """ Test passwords hashing. Note: slower than the other tests. """
-
-    password1 = '123456789'
-    password2 = 'abcdef'
-    password_unicode = 'しろいねこをみた。 白い猫を見た。'
-    for password in (password1, password2, password_unicode):
-        hashed_password = common.hash_password(password)
-        json_hashed_password = json.dumps(common.hash_password(password))
-        hashed_password_from_json = json.loads(json_hashed_password)
-        # It seems hashed passwords are not necessarily the same for 2 different calls to hash function.
-        assert common.is_valid_password(password, hashed_password), (password, hashed_password)
-        assert common.is_valid_password(password, hashed_password_from_json), (password, hashed_password_from_json)
 
 def test_generate_token():
     """ Test token generation. """

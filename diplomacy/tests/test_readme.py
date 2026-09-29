@@ -1,34 +1,25 @@
+""" Smoke test: a full game with random valid orders runs to completion and survives a save/load round trip. """
+import json
 import random
+
 from diplomacy import Game
-from diplomacy.utils.export import to_saved_game_format
+from diplomacy.utils.export import from_saved_game_format, to_saved_game_format
 
-# Creating a game
-# Alternatively, a map_name can be specified as an argument. e.g. Game(map_name='pure')
-game = Game()
-while not game.is_game_done:
 
-    # Getting the list of possible orders for all locations
-    possible_orders = game.get_all_possible_orders()
+def test_random_game_completes():
+    """ Plays random valid orders until the game ends (as in the README example). """
+    random.seed(0)
+    game = Game()
+    while not game.is_game_done:
+        possible_orders = game.get_all_possible_orders()
+        for power_name in game.powers:
+            power_orders = [random.choice(possible_orders[loc]) for loc in game.get_orderable_locations(power_name)
+                            if possible_orders[loc]]
+            game.set_orders(power_name, power_orders)
+        game.process()
 
-    # For each power, randomly sampling a valid order
-    for power_name, power in game.powers.items():
-        power_orders = [
-            random.choice(possible_orders[loc])
-            for loc in game.get_orderable_locations(power_name)
-            if possible_orders[loc]
-        ]
-        game.set_orders(power_name, power_orders)
-
-    # Messages can be sent locally with game.add_message
-    # e.g. game.add_message(Message(sender='FRANCE',
-    #                               recipient='ENGLAND',
-    #                               message='This is a message',
-    #                               phase=self.get_current_phase(),
-    #                               time_sent=int(time.time())))
-
-    # Processing the game to move to the next phase
-    game.process()
-
-# # Exporting the game to disk to visualize (game is appended to file)
-# # Alternatively, we can do >> file.write(json.dumps(to_saved_game_format(game)))
-# to_saved_game_format(game, output_path="game.json")
+    saved = json.loads(json.dumps(to_saved_game_format(game)))
+    loaded = from_saved_game_format(saved)
+    assert loaded.is_game_done
+    assert loaded.get_current_phase() == game.get_current_phase()
+    assert [phase.name for phase in loaded.get_phase_history()] == [phase.name for phase in game.get_phase_history()]

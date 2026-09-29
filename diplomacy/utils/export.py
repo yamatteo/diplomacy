@@ -19,7 +19,7 @@
 """
 import logging
 import os
-import ujson as json
+import json
 from diplomacy.engine.game import Game
 from diplomacy.engine.map import Map
 from diplomacy.utils import strings
