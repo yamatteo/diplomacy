@@ -14,7 +14,7 @@ Replace `USER` below with your PythonAnywhere username. On the EU site (eu.pytho
    uv cache clean                             # the cache counts against the 512 MB disk quota
    python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # copy this: it is your debug token
    ```
-   If `uv sync` complains about the lockfile format, the preinstalled uv is too old: `pip install --user --upgrade uv`.
+   If `uv sync` complains about the lockfile ("needs to be updated" or a format error), the preinstalled uv is probably older than the one that wrote `uv.lock`: `pip install --user --upgrade uv`, then use `~/.local/bin/uv` (the preinstalled one may come first on PATH). Never run `uv lock` on the server: it would modify the tracked `uv.lock` and break the next `git pull`.
 3. **Web → Add a new web app** → *Manual configuration* (not the Flask quickstart) → **Python 3.13**.
 4. On the Web tab set:
    - **Source code** and **Working directory**: `/home/USER/diplomacy`
