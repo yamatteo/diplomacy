@@ -1,23 +1,30 @@
 """ Template for the PythonAnywhere WSGI file.
 
     Copy this whole file into the WSGI configuration file linked from the Web tab
-    (/var/www/<username>_pythonanywhere_com_wsgi.py) and replace the CHANGE-ME values.
+    (/var/www/<username>_pythonanywhere_com_wsgi.py, or <username>_eu_... on eu.pythonanywhere.com)
+    and set DEBUG_TOKEN.
     Secrets live only there, never in the repository.
 """
 import os
+import pwd
 import sys
 import traceback
 
-USERNAME = 'CHANGE-ME'                       # your PythonAnywhere username
-PROJECT_DIR = '/home/%s/diplomacy' % USERNAME
+DEBUG_TOKEN = 'CHANGE-ME'   # generate with: python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 
-os.environ['DIPLOMACY_DATA_DIR'] = '/home/%s/diplomacy-data' % USERNAME
-os.environ['DIPLOMACY_DEBUG_TOKEN'] = 'CHANGE-ME-to-a-long-random-string'
+HOME = pwd.getpwuid(os.getuid()).pw_dir     # /home/<username>, detected automatically
+PROJECT_DIR = os.path.join(HOME, 'diplomacy')
+
+os.environ['DIPLOMACY_DATA_DIR'] = os.path.join(HOME, 'diplomacy-data')
+os.environ['DIPLOMACY_DEBUG_TOKEN'] = DEBUG_TOKEN
 
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 try:
+    if 'CHANGE-ME' in DEBUG_TOKEN:
+        # The placeholder is public (it's in the repo): refuse to run with it.
+        raise RuntimeError('Set DEBUG_TOKEN in the WSGI file (Web tab) to a long random string, then Reload.')
     from webapp import create_app
     application = create_app()
 except Exception:  # pylint: disable=broad-except

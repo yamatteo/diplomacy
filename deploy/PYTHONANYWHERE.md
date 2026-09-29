@@ -1,6 +1,6 @@
 # Deploying on PythonAnywhere (free tier)
 
-Replace `USER` below with your PythonAnywhere username.
+Replace `USER` below with your PythonAnywhere username. On the EU site (eu.pythonanywhere.com) the app is at `https://USER.eu.pythonanywhere.com` and the WSGI file is `/var/www/USER_eu_pythonanywhere_com_wsgi.py`.
 
 ## First install
 
@@ -20,7 +20,7 @@ Replace `USER` below with your PythonAnywhere username.
    - **Source code** and **Working directory**: `/home/USER/diplomacy`
    - **Virtualenv**: `/home/USER/diplomacy/.venv`
    - **Force HTTPS**: enabled (the debug token travels in the URL).
-5. Click the **WSGI configuration file** link, replace its entire content with `deploy/pythonanywhere_wsgi.py` from this repo, and set `USERNAME` and `DIPLOMACY_DEBUG_TOKEN`.
+5. Click the **WSGI configuration file** link, replace its entire content with `deploy/pythonanywhere_wsgi.py` from this repo, and set `DEBUG_TOKEN` (the username and paths are detected automatically).
 6. Click **Reload**, then open:
    - `https://USER.pythonanywhere.com/`: should say "Diplomacy server is running"
    - `https://USER.pythonanywhere.com/healthz`
@@ -30,7 +30,7 @@ Replace `USER` below with your PythonAnywhere username.
 
 ```bash
 cd ~/diplomacy && git pull && uv sync --locked --python /usr/bin/python3.13 && uv cache clean
-touch /var/www/USER_pythonanywhere_com_wsgi.py     # reloads the web app (same as the Reload button)
+touch /var/www/USER_pythonanywhere_com_wsgi.py     # (USER_eu_... on EU) reloads the web app (same as the Reload button)
 ```
 
 ## When something breaks
