@@ -30,7 +30,7 @@ uv run flask --app webapp run --debug          # http://127.0.0.1:5000; logs to 
 DIPLOMACY_DEBUG_TOKEN=x uv run flask --app webapp run   # enables /debug/info, /debug/logs, /debug/error (?token=x)
 ```
 
-Convoy paths are precomputed and cached (`diplomacy/maps/convoy_paths_cache.pkl`, or `~/.cache/diplomacy/`); if missing for a map, they are computed on first use, which is slow.
+Convoy paths are precomputed in `diplomacy/maps/convoy_paths_cache.pkl`. A map missing from it gets its paths generated on first load (minutes of CPU on all cores, written to `~/.cache/diplomacy/`), which would exhaust PythonAnywhere's CPU quota; `test_internal_cache` enforces that every `.map` is cached. If tests are unexpectedly slow locally, a stale `~/.cache/diplomacy/` may be hiding such a map.
 
 ## Architecture
 
