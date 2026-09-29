@@ -20,7 +20,7 @@ There is **no shell access** to the production server; the only way to diagnose 
 
 ## Commands
 
-uv project (`pyproject.toml` / `uv.lock`, both packages installed editable). Keep `requires-python` compatible with 3.13 (PythonAnywhere) and commit `uv.lock` after changing dependencies.
+uv project (`pyproject.toml` / `uv.lock`, both packages installed editable). Keep `requires-python` compatible with 3.13 (PythonAnywhere) and commit `uv.lock` after changing dependencies. PythonAnywhere's preinstalled uv is 0.4.18 (too old for `[dependency-groups]`); the server uses a pip-installed uv from `~/.local/bin`, see `deploy/PYTHONANYWHERE.md`.
 
 ```bash
 uv sync                                        # .venv with Flask, pytest, diplomacy + webapp

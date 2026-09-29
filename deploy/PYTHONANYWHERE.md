@@ -4,17 +4,22 @@ Replace `USER` below with your PythonAnywhere username. On the EU site (eu.pytho
 
 ## First install
 
-1. **Account → System image**: make sure it is `innit` (Python 3.13, uv available). Accounts created after March 2025 already have it.
+1. **Account → System image**: make sure it is `innit` (Python 3.13). Accounts created after March 2025 already have it.
 2. **Consoles → Bash**, then:
    ```bash
+   # The preinstalled uv (/usr/local/bin/uv, 0.4.18 as of 2026-09) is too old for our pyproject.toml / uv.lock.
+   # Install a current one from PyPI (astral.sh is not allowlisted, so not with curl) and put it first on PATH.
+   python3.13 -m pip install --user --upgrade uv
+   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+   uv --version                               # must NOT be 0.4.x
+
    git clone -b simple https://github.com/yamatteo/diplomacy.git ~/diplomacy
    cd ~/diplomacy
-   uv --version || pip install --user uv      # astral.sh is not allowlisted: install from PyPI, not with curl
    uv sync --locked --python /usr/bin/python3.13
    uv cache clean                             # the cache counts against the 512 MB disk quota
    python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # copy this: it is your debug token
    ```
-   If `uv sync` complains about the lockfile ("needs to be updated" or a format error), the preinstalled uv is probably older than the one that wrote `uv.lock`: `pip install --user --upgrade uv`, then use `~/.local/bin/uv` (the preinstalled one may come first on PATH). Never run `uv lock` on the server: it would modify the tracked `uv.lock` and break the next `git pull`.
+   If `uv sync` says the lockfile "needs to be updated", check `which uv` / `uv --version`: the old preinstalled uv is being used. Never run `uv lock` on the server: it would modify the tracked `uv.lock` and break the next `git pull`.
 3. **Web → Add a new web app** → *Manual configuration* (not the Flask quickstart) → **Python 3.13**.
 4. On the Web tab set:
    - **Source code** and **Working directory**: `/home/USER/diplomacy`
