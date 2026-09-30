@@ -62,7 +62,7 @@
     <a href="{{ url_for('game.help_page') }}">Help</a>
   </nav>
   {% if g.user %}
-    <span class="muted">{{ g.user.name }}{% if g.user.power %} ({{ g.user.power|title }}){% endif %}</span>
+    <span class="muted">{{ g.user.name }}{% if g.user.powers %} ({{ g.user.powers|map('title')|join(', ') }}){% endif %}</span>
     <form method="post" action="{{ url_for('game.logout') }}">
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
       <button>Log out</button>

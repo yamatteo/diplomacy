@@ -5,9 +5,14 @@
 
     The web app's own state lives in `meta` (saved next to the game):
     ``phase`` (the phase the clock/ready flags refer to), ``deadline`` (epoch seconds or None),
-    ``phase_hours`` ({'M': 48, 'R': 24, 'A': 24}; 0 = no deadline), ``ready`` and ``submitted`` (per power).
+    ``phase_hours`` ({'M': 48, 'R': 24, 'A': 24}; 0 = no deadline), ``ready`` and ``submitted`` (per power),
+    ``players`` (how many people the game was started for), ``neutral`` (powers nobody plays: their units
+    hold, never support and are disbanded if they must retreat; see `VARIANTS`), ``win`` (supply centers needed
+    to win, if not the map's default) and ``allies`` ({power: power whose player also controls it}: in the
+    2 player game Italy joins the winner of a coin flip in 1902).
 """
 import logging
+import random
 import re
 import time
 
@@ -21,15 +26,69 @@ ORDER_GROUPS = ['Hold', 'Move', 'Move via convoy', 'Support', 'Convoy', 'Retreat
 # Safety net: phases processed in a single request (e.g. several phases where no player has anything to order).
 MAX_PHASES_PER_REQUEST = 12
 
+ALL_POWERS = ['AUSTRIA', 'ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'RUSSIA', 'TURKEY']
+# "Alternate way to play" (rulebook p.19): how the seven powers are grouped for N players. Powers in no group are
+# neutral. The 2 player game is played from the standard 1901 start (not 1914 as in the rulebook): Italy is neutral
+# until Spring 1902, then joins one side chosen by a coin flip (`ITALY_JOINS_YEAR`), and 24 centers win.
+VARIANTS = {
+    7: [[power] for power in ALL_POWERS],
+    6: [[power] for power in ALL_POWERS if power != 'ITALY'],
+    5: [[power] for power in ALL_POWERS if power not in ('ITALY', 'GERMANY')],
+    4: [['ENGLAND'], ['AUSTRIA', 'FRANCE'], ['GERMANY', 'TURKEY'], ['ITALY', 'RUSSIA']],
+    3: [['ENGLAND', 'GERMANY', 'AUSTRIA'], ['RUSSIA', 'ITALY'], ['FRANCE', 'TURKEY']],
+    2: [['ENGLAND', 'FRANCE', 'RUSSIA'], ['AUSTRIA', 'GERMANY', 'TURKEY']],
+}
+TWO_PLAYER_WIN = 24
+ITALY_JOINS_YEAR = 1902
+MIN_PLAYERS, MAX_PLAYERS = min(VARIANTS), max(VARIANTS)
 
-def new_game(created_by, now):
-    """ Creates a standard game and its meta. """
+
+def neutral_powers(players):
+    """ Powers nobody plays in a game for `players` people. """
+    grouped = {power for group in VARIANTS[players] for power in group}
+    return [power for power in ALL_POWERS if power not in grouped]
+
+
+def check_assignment(players, users):
+    """ Compares the users file with the rulebook grouping for `players` people.
+
+        :return: list of warnings (empty if every group has exactly one user and neutral powers have none).
+    """
+    warnings = []
+    owner = {power: user.name for user in users.values() for power in user.powers}
+    groups = [set(group) for group in VARIANTS[players]]
+    for group in groups:
+        names = {owner.get(power) for power in group}
+        label = '/'.join(power.title() for power in sorted(group))
+        if names == {None}:
+            warnings.append('Nobody plays %s.' % label)
+        elif len(names) > 1:
+            warnings.append('%s should be played by a single user, but is split between %s.' % (
+                label, ', '.join(sorted(name or 'nobody' for name in names))))
+    for power in neutral_powers(players):
+        if power in owner:
+            warnings.append('%s is neutral with %d players, but %s is assigned to it.' % (
+                power.title(), players, owner[power]))
+    for user in users.values():
+        if user.powers and set(user.powers) not in groups and set(user.powers) - set(neutral_powers(players)):
+            warnings.append('%s controls %s, which is not a group of the %d player game.' % (
+                user.name, ', '.join(power.title() for power in user.powers), players))
+    return warnings
+
+
+def new_game(created_by, now, players=MAX_PLAYERS):
+    """ Creates a standard game for `players` people and its meta. """
+    if players not in VARIANTS:
+        raise ValueError('Unsupported number of players: %r' % (players,))
     game = Game(game_id='game_%s' % time.strftime('%Y%m%d_%H%M%S', time.gmtime(now)))
     meta = {'created_by': created_by, 'created_at': now, 'phase_hours': dict(DEFAULT_PHASE_HOURS),
-            'last_processed': None}
+            'last_processed': None, 'players': players, 'neutral': neutral_powers(players), 'allies': {}}
+    if players == 2:
+        meta['win'] = TWO_PLAYER_WIN
     start_phase_clock(game, meta, now)
-    LOGGER.info('New game %s created by %s: map=%s rules=%s phase=%s deadline=%s', game.game_id, created_by,
-                game.map_name, game.rules, game.get_current_phase(), meta['deadline'])
+    LOGGER.info('New game %s created by %s: players=%d neutral=%s map=%s rules=%s phase=%s deadline=%s',
+                game.game_id, created_by, players, meta['neutral'], game.map_name, game.rules,
+                game.get_current_phase(), meta['deadline'])
     return game, meta
 
 
@@ -43,31 +102,60 @@ def start_phase_clock(game, meta, now):
     meta['deadline'] = now + hours * 3600 if hours and not game.is_game_done else None
 
 
-def players_by_power(game, users):
-    """ Returns {power_name: username} for users assigned to a power of this game. """
+def players_by_power(game, meta, users):
+    """ Returns {power_name: username} for users assigned to a (non-neutral) power of this game. """
     players = {}
+    neutral = meta.get('neutral', [])
     for user in users.values():
-        if user.power and game.has_power(user.power):
-            players[user.power] = user.name
-        elif user.power:
-            LOGGER.warning('User %r is assigned to %s, which is not a power of map %s',
-                           user.name, user.power, game.map_name)
+        for power in user.powers:
+            if power in neutral:
+                LOGGER.warning('User %r is assigned to %s, which is neutral in this game: ignored', user.name, power)
+            elif game.has_power(power):
+                players[power] = user.name
+            else:
+                LOGGER.warning('User %r is assigned to %s, which is not a power of map %s',
+                               user.name, power, game.map_name)
+    for power, ally in meta.get('allies', {}).items():
+        if ally in players and power not in players:
+            players[power] = players[ally]
     return players
 
 
-def active_powers(game, users):
+def powers_of(game, meta, user):
+    """ The powers `user` may give orders to in this game. """
+    neutral = meta.get('neutral', [])
+    powers = [power for power in user.powers if game.has_power(power) and power not in neutral]
+    powers += [power for power, ally in meta.get('allies', {}).items() if ally in powers and power not in neutral]
+    return powers
+
+
+def italy_joins(game, meta, now):
+    """ 2 player game: from Spring 1902 Italy is no longer neutral but played by the winner of a coin flip. """
+    phase = game.get_current_phase()
+    if 'ITALY' not in meta.get('neutral', []) or meta.get('players') != 2 or game.is_game_done:
+        return
+    if not phase[1:5].isdigit() or int(phase[1:5]) < ITALY_JOINS_YEAR:
+        return
+    side = random.choice([group[0] for group in VARIANTS[2]])
+    meta['neutral'].remove('ITALY')
+    meta.setdefault('allies', {})['ITALY'] = side
+    LOGGER.info('Coin flip at %s: Italy joins the side of %s (%s). neutral=%s allies=%s', phase, side,
+                '/'.join(next(group for group in VARIANTS[2] if group[0] == side)), meta['neutral'], meta['allies'])
+
+
+def active_powers(game, meta, users):
     """ Powers that have a player and something to order in the current phase. """
-    return [power for power in players_by_power(game, users) if game.get_orderable_locations(power)]
+    return [power for power in players_by_power(game, meta, users) if game.get_orderable_locations(power)]
 
 
 def due_reason(game, meta, users, now):
     """ Returns why the current phase should be processed now, or None if it should not. """
     if game.is_game_done:
         return None
-    players = players_by_power(game, users)
+    players = players_by_power(game, meta, users)
     if not players:
         return None                                     # Nobody plays: never auto-process (it would never stop).
-    active = [power for power in players if game.get_orderable_locations(power)]
+    active = active_powers(game, meta, users)
     if not active:
         return 'no player has orders to give in this phase'
     if all(meta['ready'].get(power) for power in active):
@@ -84,7 +172,17 @@ def process_phase(game, meta, store, now, reason):
     store.backup('before_%s' % phase)
     LOGGER.info('Processing %s (%s). ready=%s submitted=%s orders=%s', phase, reason, meta['ready'],
                 sorted(meta['submitted']), game.get_orders())
+    neutral_units = {power: list(game.get_power(power).units) for power in meta.get('neutral', [])
+                     if game.has_power(power)} if phase[-1] == 'A' else {}
+    if meta.get('win'):
+        game.win = meta['win']          # the engine resets it from the map every time the game is loaded
     phase_data = game.process()
+    for power, units in neutral_units.items():
+        # The engine disbands units in excess of supply centers; neutral units must stay where they are.
+        if sorted(game.get_power(power).units) != sorted(units):
+            LOGGER.info('Restoring units of neutral %s after %s: %s -> %s', power, phase,
+                        game.get_power(power).units, units)
+            game.set_units(power, units, reset=True)
     results = {unit: [str(result) for result in unit_results if str(result)]
                for unit, unit_results in phase_data.results.items()}
     LOGGER.info('Processed %s -> %s. results=%s', phase, game.get_current_phase(), results)
@@ -92,6 +190,7 @@ def process_phase(game, meta, store, now, reason):
     if game.is_game_done:
         LOGGER.info('Game is over: outcome=%s', game.outcome)
     meta['last_processed'] = {'phase': phase, 'at': now, 'reason': reason}
+    italy_joins(game, meta, now)
     start_phase_clock(game, meta, now)
     LOGGER.info('Now in %s, deadline=%s', game.get_current_phase(), meta['deadline'])
     store.save(game, meta)
@@ -188,6 +287,9 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
         :return: list of error messages; empty if the orders were accepted.
     """
     phase = game.get_current_phase()
+    if power_name in meta.get('neutral', []):
+        LOGGER.warning('Orders for neutral %s rejected: chosen=%s', power_name, chosen)
+        return ['%s is neutral in this game and cannot be given orders.' % power_name.title()]
     possible = game.get_all_possible_orders()
     orderable = game.get_orderable_locations(power_name)
     orders, errors = [], []
@@ -236,14 +338,14 @@ def _clean_svg(svg):
     return tag + svg[tag_end:]
 
 
-def render_current(game, orders_of=None):
-    """ SVG of the current position. Only the orders of `orders_of` (a power name) are drawn, if given:
+def render_current(game, orders_of=()):
+    """ SVG of the current position. Only the orders of the powers in `orders_of` are drawn, if given:
         other powers' orders are secret until the phase is processed. """
     if not orders_of:
         return _clean_svg(game.render(incl_orders=False, incl_abbrev=True))
     copy = Game.from_dict(game.to_dict())
     for power_name in copy.powers:
-        if power_name != orders_of:
+        if power_name not in orders_of:
             copy.clear_orders(power_name)
     return _clean_svg(copy.render(incl_orders=True, incl_abbrev=True))
 
@@ -270,7 +372,8 @@ def phase_orders(game, phase_data):
 
 def power_status(game, meta, users):
     """ One row per power for the status table. """
-    players = players_by_power(game, users)
+    players = players_by_power(game, meta, users)
+    neutral = meta.get('neutral', [])
     rows = []
     for power_name, power in game.powers.items():
         has_orders = bool(game.get_orderable_locations(power_name)) and not game.is_game_done
@@ -278,6 +381,8 @@ def power_status(game, meta, users):
             state = 'eliminated'
         elif game.is_game_done:
             state = ''
+        elif power_name in neutral:
+            state = 'neutral (units hold)'
         elif power_name not in players:
             state = 'no player (units hold)'
         elif not has_orders:

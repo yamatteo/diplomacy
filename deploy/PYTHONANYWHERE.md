@@ -34,7 +34,7 @@ Replace `USER` below with your PythonAnywhere username. On the EU site (eu.pytho
 ## Players and first game
 
 1. After the first start, the app creates `~/diplomacy-data/users.txt` with one user, `admin`, and a random password. Open it from the **Files** tab to read the password.
-2. Edit that file to add your friends, one per line: `username:password:POWER`, plus `:admin` for admins. POWER is `AUSTRIA`, `ENGLAND`, `FRANCE`, `GERMANY`, `ITALY`, `RUSSIA`, `TURKEY`, or `-` for none. Example:
+2. Edit that file to add your friends, one per line: `username:password:POWERS`, plus `:admin` for admins. POWERS is one or more (comma separated, e.g. `FRANCE,AUSTRIA`, for games with fewer than 7 players) of `AUSTRIA`, `ENGLAND`, `FRANCE`, `GERMANY`, `ITALY`, `RUSSIA`, `TURKEY`, or `-` for none. Example:
    ```
    matteo:some-password:FRANCE:admin
    anna:another-password:GERMANY

@@ -46,10 +46,26 @@
 
 <div class="card">
   <h2 style="margin-top: 0">New game</h2>
-  <p class="muted">Starts a standard game at Spring 1901.
+  <p class="muted">Starts a standard game at Spring 1901, following the rulebook's "Alternate way to play" when
+    there are fewer than seven players. Give each player's countries in <code>{{ users_file }}</code> (see Players below).
     {% if has_game %}The current game is moved to the archive folder, not deleted.{% endif %}</p>
   <form method="post" action="{{ url_for('game.admin_new_game') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label>Number of players
+      <select name="players" style="width: auto">
+        {% for count in variants %}<option value="{{ count }}" {% if count == default_players %}selected{% endif %}>{{ count }}</option>{% endfor %}
+      </select></label>
+    <div class="table-wrap">
+    <table>
+      <tr><th>Players</th><th>Who controls what</th><th>Neutral (units hold)</th><th>users.txt check</th></tr>
+      {% for count, variant in variants.items() %}
+        <tr><td>{{ count }}</td>
+          <td>{% for group in variant.groups %}{{ group|map('title')|join(' + ') }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+          <td>{{ variant.neutral|map('title')|join(', ') or '—' }}</td>
+          <td>{% if variant.warnings %}{{ variant.warnings|join(' ') }}{% else %}matches{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    </div>
     <label><input type="checkbox" name="confirm" value="yes"> Yes, start a new game{% if has_game %} and archive the current one{% endif %}</label>
     <button class="danger">Start new game</button>
   </form>
@@ -58,12 +74,13 @@
 <div class="card">
   <h2 style="margin-top: 0">Players</h2>
   <p class="muted">Edit <code>{{ users_file }}</code> to add players or assign powers; changes apply immediately.
-    Powers without a player give no orders: their units hold.</p>
+    Give one user several powers with a comma list, e.g. <code>marco:secret:GERMANY,TURKEY</code>.
+    Powers without a player give no orders: their units hold.{% if players %} This game was started for {{ players }} players{% if neutral %}; neutral: {{ neutral|map('title')|join(', ') }}{% endif %}.{% endif %}</p>
   <div class="table-wrap">
   <table>
-    <tr><th>User</th><th>Power</th><th>Admin</th></tr>
+    <tr><th>User</th><th>Powers</th><th>Admin</th></tr>
     {% for user in users %}
-      <tr><td>{{ user.name }}</td><td>{{ user.power|title if user.power else '—' }}</td><td>{{ 'yes' if user.is_admin else '' }}</td></tr>
+      <tr><td>{{ user.name }}</td><td>{{ user.powers|map('title')|join(', ') or '—' }}</td><td>{{ 'yes' if user.is_admin else '' }}</td></tr>
     {% endfor %}
   </table>
   </div>

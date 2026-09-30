@@ -1,7 +1,8 @@
 """ Players, read from a plain text file (`users.txt` in the data dir).
 
-    One user per line: ``username:password:POWER`` or ``username:password:POWER:admin``.
-    POWER is the power the user plays (e.g. FRANCE), or ``-`` for none (spectator / admin only).
+    One user per line: ``username:password:POWERS`` or ``username:password:POWERS:admin``.
+    POWERS is the power the user plays (e.g. FRANCE), several separated by commas (FRANCE,AUSTRIA: one player
+    controlling more countries, for games with fewer than 7 players), or ``-`` for none (spectator / admin only).
     Lines starting with # are comments. Passwords are plain text and cannot contain ':'.
     The file is re-read on every request, so edits apply immediately.
 """
@@ -13,14 +14,16 @@ from collections import namedtuple
 
 LOGGER = logging.getLogger(__name__)
 
-User = namedtuple('User', 'name password power is_admin')
+User = namedtuple('User', 'name password powers is_admin')
 
-HEADER = """# Diplomacy users. One per line:   username:password:POWER[:admin]
-# POWER is one of AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY, or - for none.
+HEADER = """# Diplomacy users. One per line:   username:password:POWERS[:admin]
+# POWERS is one or more (comma separated) of AUSTRIA ENGLAND FRANCE GERMANY ITALY RUSSIA TURKEY, or - for none.
+# In games with fewer than 7 players give several powers to one user, e.g. FRANCE,AUSTRIA.
 # Add :admin to let a user start games, force processing and change deadlines.
 # Passwords are plain text and cannot contain ':'. Changes apply immediately (no reload needed).
 # Example:
 #   anna:correct-horse:FRANCE
+#   marco:tin-roof-sun:GERMANY,TURKEY
 #   piero:battery-staple:-:admin
 """
 
@@ -56,24 +59,27 @@ def load_users(path):
             continue
         fields = [field.strip() for field in line.split(':')]
         if len(fields) not in (3, 4) or not fields[0] or not fields[1]:
-            LOGGER.warning('users file line %d ignored: expected username:password:POWER[:admin], got %d fields',
+            LOGGER.warning('users file line %d ignored: expected username:password:POWERS[:admin], got %d fields',
                            number, len(fields))
             continue
         if len(fields) == 4 and fields[3].lower() != 'admin':
             LOGGER.warning('users file line %d ignored (user %r): 4th field must be "admin"', number, fields[0])
             continue
         name = fields[0]
-        power = None if fields[2] in ('-', '') else fields[2].upper()
         if name in users:
             LOGGER.warning('users file line %d ignored: duplicate username %r', number, name)
             continue
-        if power and power in powers:
-            LOGGER.warning('users file line %d: power %s already assigned to %r; %r gets no power',
-                           number, power, powers[power], name)
-            power = None
-        if power:
+        user_powers = []
+        for power in (item.strip().upper() for item in fields[2].split(',')):
+            if power in ('-', '') or power in user_powers:
+                continue
+            if power in powers:
+                LOGGER.warning('users file line %d: power %s already assigned to %r; %r does not get it',
+                               number, power, powers[power], name)
+                continue
             powers[power] = name
-        users[name] = User(name=name, password=fields[1], power=power, is_admin=len(fields) == 4)
+            user_powers.append(power)
+        users[name] = User(name=name, password=fields[1], powers=tuple(user_powers), is_admin=len(fields) == 4)
     if not any(user.is_admin for user in users.values()):
         LOGGER.warning('users file %s has no admin: nobody can start a game', path)
     return users
@@ -91,4 +97,4 @@ def check_login(users, name, password):
 
 def users_summary(users):
     """ Users without passwords, for logs and /debug/info. """
-    return [{'name': user.name, 'power': user.power, 'admin': user.is_admin} for user in users.values()]
+    return [{'name': user.name, 'powers': list(user.powers), 'admin': user.is_admin} for user in users.values()]

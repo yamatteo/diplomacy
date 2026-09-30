@@ -16,7 +16,7 @@ uv run flask --app webapp run --debug    # web app on http://127.0.0.1:5000
 
 ## How it plays
 
-- Players are listed in a plain text file (`users.txt` in the data folder): `username:password:POWER`, with `:admin` for admins. On first start the app creates it with a random-password `admin`.
+- Players are listed in a plain text file (`users.txt` in the data folder): `username:password:POWERS` (comma separated for several countries), with `:admin` for admins. The admin picks 2-7 players when starting a game. On first start the app creates it with a random-password `admin`.
 - An admin starts the game and sets how long each kind of phase lasts.
 - Each player picks orders for their units from menus of legal orders. Orders stay secret until the phase is processed.
 - A phase is processed as soon as every player is marked ready, or when its deadline passes (checked whenever someone opens a page).

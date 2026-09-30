@@ -153,7 +153,7 @@ def test_invalid_orders_are_rejected(app):
     anna.post('/orders', phase='S1901M', order_PAR='A PAR - MOS')
     assert 'is not a valid order' in anna.text('/')
     anna.post('/orders', phase='S1901M', order_BER='A BER - KIE')     # not France's unit
-    assert 'is not a valid order' in anna.text('/')
+    assert 'You cannot give orders for BER' in anna.text('/')
     assert read_game_file(app)['game']['powers']['FRANCE']['orders'] == {}
     assert read_game_file(app)['game']['powers']['GERMANY']['orders'] == {}
     # The spectator cannot order at all.
@@ -258,7 +258,7 @@ def test_debug_info_reports_game_without_secrets(app):
     response = app.test_client().get('/debug/info?token=debug-secret')
     info = response.get_json()
     assert info['game']['phase'] == 'S1901M'
-    assert {'name': 'bruno', 'power': 'GERMANY', 'admin': False} in info['users']
+    assert {'name': 'bruno', 'powers': ['GERMANY'], 'admin': False} in info['users']
     text = response.get_data(as_text=True)
     assert 'pw-anna' not in text and 'A PAR - BUR' not in text
 
@@ -286,3 +286,88 @@ def test_help_page_examples_and_rulebook(app):
     rulebook = Browser(app, 'carla').get('/rules.pdf')
     assert rulebook.status_code == 200 and rulebook.mimetype == 'application/pdf' and rulebook.data[:4] == b'%PDF'
     assert 'private' in rulebook.headers['Cache-Control']
+
+
+def make_app(tmp_path, monkeypatch, users):
+    monkeypatch.setenv('DIPLOMACY_DATA_DIR', str(tmp_path))
+    (tmp_path / 'users.txt').write_text(users)
+    app = create_app()
+    app.config['TESTING'] = True
+    return app
+
+
+def test_user_with_several_powers_orders_them_in_one_form(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, 'anna:pw-anna:FRANCE,AUSTRIA:admin\nbruno:pw-bruno:ENGLAND\n')
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes', players='6')
+    page = anna.text('/')
+    assert 'name="order_PAR"' in page and 'name="order_VIE"' in page and 'name="order_LON"' not in page
+    assert anna.post('/orders', phase='S1901M', order_PAR='A PAR - BUR', order_VIE='A VIE - GAL').status_code == 302
+    powers = read_game_file(app)['game']['powers']
+    assert sorted(powers['FRANCE']['orders']) == ['A PAR'] and sorted(powers['AUSTRIA']['orders']) == ['A VIE']
+    anna.post('/orders', phase='S1901M', order_LON='F LON - NTH')      # England's unit
+    assert 'You cannot give orders for LON' in anna.text('/')
+    assert read_game_file(app)['game']['powers']['ENGLAND']['orders'] == {}
+
+
+def test_neutral_powers_do_not_block_and_cannot_be_ordered(tmp_path, monkeypatch):
+    users = 'anna:pw-anna:FRANCE:admin\nbruno:pw-bruno:GERMANY\n'
+    app = make_app(tmp_path, monkeypatch, users)
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes', players='5')
+    assert read_game_file(app)['meta']['neutral'] == ['GERMANY', 'ITALY']
+    assert 'neutral (units hold)' in anna.text('/')
+    # Germany is neutral: bruno has no power to order with, and only anna's readiness counts.
+    assert Browser(app, 'bruno').post('/orders', phase='S1901M', order_MUN='A MUN H').status_code == 403
+    anna.post('/orders', phase='S1901M', order_PAR='A PAR - BUR', ready='yes')
+    assert read_game_file(app)['game']['phase'] == 'FALL 1901 MOVEMENT'
+
+
+def test_new_game_rejects_bad_player_count(app):
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes', players='9')
+    assert not os.path.exists(os.path.join(app.config['DATA_DIR'], 'game.json'))
+    anna.post('/admin/new-game', confirm='yes')                        # default: 7 players
+    assert read_game_file(app)['meta']['players'] == 7
+
+
+def test_two_player_game_italy_joins_in_1902(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, 'anna:pw-anna:ENGLAND,FRANCE,RUSSIA:admin\nbruno:pw-bruno:AUSTRIA,GERMANY,TURKEY\n')
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes', players='2')
+    meta = read_game_file(app)['meta']
+    assert meta['neutral'] == ['ITALY'] and meta['win'] == 24
+    # Everybody holds and is ready, until 1902 starts.
+    for _ in range(8):
+        game, _meta = app.config['GAME_STORE'].load()
+        if game.get_current_phase() == 'S1902M':
+            break
+        for name in ('anna', 'bruno'):
+            Browser(app, name).post('/orders', phase=game.get_current_phase(), ready='yes')
+    data = read_game_file(app)
+    assert data['game']['phase'] == 'SPRING 1902 MOVEMENT'
+    assert data['meta']['neutral'] == [] and data['meta']['allies']['ITALY'] in ('ENGLAND', 'AUSTRIA')
+    winner = 'anna' if data['meta']['allies']['ITALY'] == 'ENGLAND' else 'bruno'
+    assert 'name="order_ROM"' in Browser(app, winner).text('/')
+
+
+def test_neutral_power_keeps_units_it_has_no_centers_for(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, 'anna:pw-anna:FRANCE:admin\nbruno:pw-bruno:GERMANY\n')
+    anna, bruno = Browser(app, 'anna'), Browser(app, 'bruno')
+    anna.post('/admin/new-game', confirm='yes', players='6')
+    store = app.config['GAME_STORE']
+    anna.post('/orders', phase='S1901M', order_MAR='A MAR - SPA', ready='yes')     # France takes Spain: a build
+    bruno.post('/orders', phase='S1901M', ready='yes')
+    for browser in (anna, bruno):                       # Fall 1901: hold; France waits to build
+        browser.post('/orders', phase='F1901M', ready='yes')
+    game, meta = store.load()
+    assert game.get_current_phase() == 'W1901A' and 'ITALY' in meta['neutral']
+    italian_units = sorted(game.get_power('ITALY').units)
+    assert len(italian_units) == 3
+    # Italy loses all its centers: the engine would disband its units (more units than centers).
+    game.set_centers('ITALY', [], reset=True)
+    store.save(game, meta)
+    Browser(app, 'anna').post('/admin/process')
+    data = read_game_file(app)
+    assert data['game']['phase'] == 'SPRING 1902 MOVEMENT'
+    assert sorted(data['game']['powers']['ITALY']['units']) == italian_units

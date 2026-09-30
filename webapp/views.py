@@ -136,7 +136,8 @@ def login():
             session['user'] = user.name
             session['csrf'] = secrets.token_urlsafe(16)
             session.permanent = True
-            LOGGER.info('Login: user=%r power=%s admin=%s ip=%s', user.name, user.power, user.is_admin, g.client_ip)
+            LOGGER.info('Login: user=%r powers=%s admin=%s ip=%s', user.name, list(user.powers), user.is_admin,
+                        g.client_ip)
             return redirect(url_for('game.index'))
         LOGGER.warning('Failed login: username=%r known_user=%s ip=%s', name, name in g.users, g.client_ip)
         flash('Wrong username or password.', 'error')
@@ -157,15 +158,14 @@ def logout():
 @bp.route('/')
 @login_required
 def index():
-    """ The game page: map, status of every power, and the orders form of the user's power. """
+    """ The game page: map, status of every power, and the orders form for the user's power(s). """
     now = time.time()
     with open_game() as (game, meta, _):
         if not game:
             return render_template('nogame.html')
-        my_power = g.user.power if g.user.power and game.has_power(g.user.power) else None
-        choices = None
-        if my_power and not game.is_game_done and game.get_orderable_locations(my_power):
-            choices = gameplay.order_choices(game, my_power)
+        my_powers = gameplay.powers_of(game, meta, g.user)
+        active = [power for power in my_powers if game.get_orderable_locations(power)] if not game.is_game_done else []
+        choices = [{'power': power, 'choices': gameplay.order_choices(game, power)} for power in active]
         history = game.get_phase_history()
         context = {
             'phase': game.get_current_phase(),
@@ -174,11 +174,11 @@ def index():
             'outcome': game.outcome,
             'deadline': deadline_text(meta, now),
             'status': gameplay.power_status(game, meta, g.users),
-            'svg': Markup(gameplay.render_current(game, orders_of=my_power)),
-            'my_power': my_power,
+            'svg': Markup(gameplay.render_current(game, orders_of=my_powers)),
+            'my_powers': my_powers,
             'choices': choices,
-            'my_ready': bool(my_power and meta['ready'].get(my_power)),
-            'my_submitted': bool(my_power and my_power in meta['submitted']),
+            'my_ready': bool(active) and all(meta['ready'].get(power) for power in active),
+            'my_submitted': any(power in meta['submitted'] for power in active),
             'last_phase': history[-1].name if history else None,
             'last_orders': gameplay.phase_orders(game, history[-1]) if history else None,
         }
@@ -194,27 +194,44 @@ def orders():
         if not game or game.is_game_done:
             flash('There is no game in progress.', 'error')
             return redirect(url_for('game.index'))
-        power = g.user.power
-        if not power or not game.has_power(power):
-            LOGGER.warning('User %r without a power tried to submit orders', g.user.name)
+        powers = gameplay.powers_of(game, meta, g.user)
+        if not powers:
+            LOGGER.warning('User %r without a playable power tried to submit orders', g.user.name)
             abort(403)
         phase = game.get_current_phase()
         if request.form.get('phase') != phase:
             # The phase was processed between showing the form and submitting it.
-            LOGGER.warning('Stale orders from %s: form phase=%r current phase=%s', power,
+            LOGGER.warning('Stale orders from %s: form phase=%r current phase=%s', powers,
                            request.form.get('phase'), phase)
             flash('The game moved on to %s before your orders arrived: they were NOT recorded. '
                   'Please enter orders for the new phase.' % phase, 'error')
             return redirect(url_for('game.index'))
         chosen = {key[len('order_'):]: value.strip() for key, value in request.form.items()
                   if key.startswith('order_')}
-        errors = gameplay.submit_orders(game, meta, power, chosen, request.form.get('ready') == 'yes', now)
+        # One form can carry the orders of all the user's powers: split them by the power owning each location.
+        by_power = {power: {} for power in powers if game.get_orderable_locations(power)}
+        owner = {loc: power for power in by_power for loc in game.get_orderable_locations(power)}
+        foreign = [loc for loc, order in chosen.items() if order and loc not in owner]
+        if foreign:
+            LOGGER.warning('User %r (powers %s) sent orders for locations that are not theirs: %s',
+                           g.user.name, powers, foreign)
+            flash('You cannot give orders for %s.' % ', '.join(sorted(foreign)), 'error')
+            return redirect(url_for('game.index'))
+        for loc, order in chosen.items():
+            if loc in owner:
+                by_power[owner[loc]][loc] = order
+        ready = request.form.get('ready') == 'yes'
+        errors = []
+        for power, power_chosen in by_power.items():
+            errors += gameplay.submit_orders(game, meta, power, power_chosen, ready, now)
         if errors:
             for error in errors:
                 flash(error, 'error')
+            # Powers processed before the failing one were already updated in memory: save what was accepted.
+            store.save(game, meta)
             return redirect(url_for('game.index'))
         store.save(game, meta)
-        flash('Orders saved for %s%s.' % (phase, ' and marked ready' if meta['ready'].get(power) else
+        flash('Orders saved for %s%s.' % (phase, ' and marked ready' if ready else
                                           ' (not marked ready: the phase waits for you until the deadline)'), 'ok')
         announce_processed(gameplay.process_if_due(game, meta, g.users, store, now))
     return redirect(url_for('game.index'))
@@ -286,10 +303,15 @@ def admin():
     now = time.time()
     with open_game() as (game, meta, _):
         context = {'has_game': bool(game), 'users': list(g.users.values()),
-                   'users_file': current_app.config['USERS_FILE']}
+                   'users_file': current_app.config['USERS_FILE'],
+                   'variants': {count: {'groups': groups, 'neutral': gameplay.neutral_powers(count),
+                                        'warnings': gameplay.check_assignment(count, g.users)}
+                                for count, groups in sorted(gameplay.VARIANTS.items(), reverse=True)},
+                   'default_players': gameplay.MAX_PLAYERS}
         if game:
             context.update(phase=game.get_current_phase(), done=game.is_game_done, deadline=deadline_text(meta, now),
-                           phase_hours=meta['phase_hours'], phase_names=gameplay.PHASE_TYPE_NAMES)
+                           phase_hours=meta['phase_hours'], phase_names=gameplay.PHASE_TYPE_NAMES,
+                           neutral=meta.get('neutral', []), players=meta.get('players'))
     return render_template('admin.html', **context)
 
 
@@ -300,14 +322,26 @@ def admin_new_game():
     if request.form.get('confirm') != 'yes':
         flash('Tick the confirmation box to start a new game.', 'error')
         return redirect(url_for('game.admin'))
+    try:
+        players = int(request.form.get('players') or gameplay.MAX_PLAYERS)
+        if players not in gameplay.VARIANTS:
+            raise ValueError(players)
+    except ValueError:
+        flash('The number of players must be between %d and %d.' % (gameplay.MIN_PLAYERS, gameplay.MAX_PLAYERS),
+              'error')
+        return redirect(url_for('game.admin'))
     now = time.time()
     store = current_app.config['GAME_STORE']
     with store.locked():
         archived = store.archive()
-        game, meta = gameplay.new_game(g.user.name, now)
+        game, meta = gameplay.new_game(g.user.name, now, players)
         store.save(game, meta)
-    LOGGER.info('Admin %r started a new game (previous archived to %s)', g.user.name, archived)
-    flash('New game started.', 'ok')
+    warnings = gameplay.check_assignment(players, g.users)
+    LOGGER.info('Admin %r started a new %d player game (previous archived to %s). users=%s warnings=%s',
+                g.user.name, players, archived, {user.name: list(user.powers) for user in g.users.values()}, warnings)
+    flash('New game started for %d players.' % players, 'ok')
+    for warning in warnings:
+        flash('Check users file: %s' % warning, 'error')
     return redirect(url_for('game.index'))
 
 
