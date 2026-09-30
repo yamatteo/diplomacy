@@ -85,6 +85,36 @@ def load_users(path):
     return users
 
 
+def assign_powers(path, assignment):
+    """ Rewrites the POWERS field of every user line in the users file: users in `assignment`
+        ({username: [powers]}) get those powers, all other users get none (``-``). Comments, blank lines,
+        passwords and admin flags are kept. The previous file is saved as ``<path>.bak``.
+
+        :return: number of user lines changed.
+    """
+    with open(path, encoding='utf-8') as file:
+        text = file.read()
+    out, changed = [], 0
+    for line in text.splitlines():
+        fields = [field.strip() for field in line.split(':')]
+        if line.strip() and not line.strip().startswith('#') and len(fields) in (3, 4):
+            new = ','.join(assignment.get(fields[0], [])) or '-'
+            if new != (fields[2] or '-'):
+                changed += 1
+            fields[2] = new
+            line = ':'.join(fields)
+        out.append(line)
+    with open(path + '.bak', 'w', encoding='utf-8') as file:
+        file.write(text)
+    os.chmod(path + '.bak', 0o600)
+    temp = path + '.tmp'
+    with open(temp, 'w', encoding='utf-8') as file:
+        file.write('\n'.join(out) + '\n')
+    os.chmod(temp, 0o600)
+    os.replace(temp, path)
+    return changed
+
+
 def check_login(users, name, password):
     """ Returns the User if the credentials match, else None. """
     user = users.get(name)

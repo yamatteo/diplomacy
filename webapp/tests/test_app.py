@@ -371,3 +371,35 @@ def test_neutral_power_keeps_units_it_has_no_centers_for(tmp_path, monkeypatch):
     data = read_game_file(app)
     assert data['game']['phase'] == 'SPRING 1902 MOVEMENT'
     assert sorted(data['game']['powers']['ITALY']['units']) == italian_units
+
+
+def test_admin_assigns_powers_to_random_users(tmp_path, monkeypatch):
+    users = ('# my players\nboss:pw-boss:-:admin\n' +
+             ''.join('p%d:pw-p%d:-\n' % (i, i) for i in range(1, 5)))
+    app = make_app(tmp_path, monkeypatch, users)
+    boss = Browser(app, 'boss')
+    boss.post('/admin/assign', players='3', candidates=['p1', 'p2', 'p3', 'p4'],
+              random_select='yes', random_powers='yes')
+    text = (tmp_path / 'users.txt').read_text()
+    assert text.startswith('# my players\nboss:pw-boss:-:admin\n')          # comments, admin and passwords kept
+    assert (tmp_path / 'users.txt.bak').read_text() == users
+    from webapp.users import load_users
+    loaded = load_users(str(tmp_path / 'users.txt'))
+    groups = sorted(sorted(user.powers) for user in loaded.values() if user.powers)
+    assert groups == [['AUSTRIA', 'ENGLAND', 'GERMANY'], ['FRANCE', 'TURKEY'], ['ITALY', 'RUSSIA']]
+    assert loaded['boss'].is_admin and loaded['boss'].powers == ()
+    # Not enough candidates, and a game in progress needs confirmation.
+    assert 'users available' in (boss.post('/admin/assign', players='4', candidates=['p1']) and
+                                 boss.text('/admin'))
+    boss.post('/admin/new-game', confirm='yes', players='3')
+    before = (tmp_path / 'users.txt').read_text()
+    boss.post('/admin/assign', players='2', candidates=['p1', 'p2'])
+    assert (tmp_path / 'users.txt').read_text() == before
+    boss.post('/admin/assign', players='2', candidates=['p1', 'p2'], confirm='yes', random_powers='yes')
+    assert sum(1 for user in load_users(str(tmp_path / 'users.txt')).values() if user.powers) == 2
+
+
+def test_plan_assignment_without_randomness():
+    from webapp import gameplay
+    assert gameplay.plan_assignment(['a', 'b', 'c', 'd'], 3, random_select=False, random_powers=False) == {
+        'a': ['ENGLAND', 'GERMANY', 'AUSTRIA'], 'b': ['RUSSIA', 'ITALY'], 'c': ['FRANCE', 'TURKEY']}

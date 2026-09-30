@@ -17,7 +17,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, redirect, 
 from markupsafe import Markup
 
 from webapp import gameplay, tutorial
-from webapp.users import check_login, load_users
+from webapp.users import assign_powers, check_login, load_users
 
 LOGGER = logging.getLogger(__name__)
 bp = Blueprint('game', __name__)
@@ -343,6 +343,33 @@ def admin_new_game():
     for warning in warnings:
         flash('Check users file: %s' % warning, 'error')
     return redirect(url_for('game.index'))
+
+
+@bp.route('/admin/assign', methods=['POST'])
+@admin_required
+def admin_assign():
+    """ Rewrites the powers in the users file: picks N of the ticked users (randomly or in file order) and gives
+        them the groups of powers of the N player game (shuffled or in order). Everybody else gets no power. """
+    names = [name for name in g.users if name in request.form.getlist('candidates')]
+    try:
+        players = int(request.form.get('players', ''))
+        assignment = gameplay.plan_assignment(names, players,
+                                              random_select=request.form.get('random_select') == 'yes',
+                                              random_powers=request.form.get('random_powers') == 'yes')
+    except ValueError as exc:
+        flash('Cannot assign powers: %s' % exc, 'error')
+        return redirect(url_for('game.admin'))
+    with open_game() as (game, meta, _):
+        if game and not game.is_game_done and request.form.get('confirm') != 'yes':
+            flash('A game is in progress: tick the confirmation box to change who plays what.', 'error')
+            return redirect(url_for('game.admin'))
+    changed = assign_powers(current_app.config['USERS_FILE'], assignment)
+    LOGGER.info('Admin %r rewrote powers in the users file for a %d player game: %s (candidates=%s, '
+                'random_select=%s, random_powers=%s, %d lines changed, old file kept as .bak)', g.user.name, players,
+                assignment, names, request.form.get('random_select'), request.form.get('random_powers'), changed)
+    flash('Powers assigned: %s.' % '; '.join('%s: %s' % (name, ', '.join(power.title() for power in powers))
+                                             for name, powers in assignment.items()), 'ok')
+    return redirect(url_for('game.admin'))
 
 
 @bp.route('/admin/process', methods=['POST'])

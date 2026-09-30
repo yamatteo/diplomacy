@@ -76,6 +76,24 @@ def check_assignment(players, users):
     return warnings
 
 
+def plan_assignment(names, players, rng=random, random_select=True, random_powers=True):
+    """ Chooses `players` of the users `names` and gives each a group of powers of the `players` player game.
+
+        :param random_select: pick the players at random (else the first ones in `names`).
+        :param random_powers: shuffle which player gets which group (else in order).
+        :return: {username: [powers]}
+    """
+    if players not in VARIANTS:
+        raise ValueError('Unsupported number of players: %r' % (players,))
+    if len(names) < players:
+        raise ValueError('%d users available, %d needed.' % (len(names), players))
+    chosen = rng.sample(list(names), players) if random_select else list(names)[:players]
+    groups = [list(group) for group in VARIANTS[players]]
+    if random_powers:
+        rng.shuffle(groups)
+    return dict(zip(chosen, groups))
+
+
 def new_game(created_by, now, players=MAX_PLAYERS):
     """ Creates a standard game for `players` people and its meta. """
     if players not in VARIANTS:

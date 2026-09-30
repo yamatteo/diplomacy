@@ -85,4 +85,28 @@
   </table>
   </div>
 </div>
+
+<div class="card">
+  <h2 style="margin-top: 0">Assign powers</h2>
+  <p class="muted">Rewrites the powers in <code>{{ users_file }}</code> for an N player game, following the rulebook
+    groupings listed under New game (the previous file is kept as <code>.bak</code>). Users who are not ticked, or not
+    picked, get no power. Start the new game afterwards, with the same number of players.</p>
+  <form method="post" action="{{ url_for('game.admin_assign') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <p style="margin: 0">Who can play:</p>
+    {% for user in users %}
+      <label><input type="checkbox" name="candidates" value="{{ user.name }}" checked> {{ user.name }}</label>
+    {% endfor %}
+    <label>Number of players
+      <select name="players" style="width: auto">
+        {% for count in variants %}<option value="{{ count }}" {% if count == default_players %}selected{% endif %}>{{ count }}</option>{% endfor %}
+      </select></label>
+    <label><input type="checkbox" name="random_select" value="yes" checked> Pick the players at random among the ticked users (otherwise the first ones in the file)</label>
+    <label><input type="checkbox" name="random_powers" value="yes" checked> Shuffle the powers (otherwise in rulebook order)</label>
+    {% if has_game and not done %}
+      <label><input type="checkbox" name="confirm" value="yes"> A game is in progress: change who plays what anyway</label>
+    {% endif %}
+    <button>Assign powers</button>
+  </form>
+</div>
 {% endblock %}
