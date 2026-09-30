@@ -24,6 +24,7 @@
     {% elif my_submitted %}Your orders are saved, but you are not marked ready.
     {% else %}You have not submitted orders for this phase yet.{% endif %}
     Other players cannot see your orders until the phase is processed; you can change them until then.
+    <a href="{{ url_for('game.help_page') }}#orders">How orders work</a>.
   </p>
   <form method="post" action="{{ url_for('game.orders') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">

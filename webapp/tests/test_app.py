@@ -261,3 +261,28 @@ def test_debug_info_reports_game_without_secrets(app):
     assert {'name': 'bruno', 'power': 'GERMANY', 'admin': False} in info['users']
     text = response.get_data(as_text=True)
     assert 'pw-anna' not in text and 'A PAR - BUR' not in text
+
+
+def test_help_page_examples_and_rulebook(app):
+    anonymous = Browser(app)
+    page = anonymous.text('/help')                                  # public
+    assert 'Cheat sheet' in page and 'Mid-Atlantic Ocean' in page and '<code>MAO</code>' in page
+    assert 'BUL/EC</code> Bulgaria' not in page                     # coasts are not listed as provinces
+    # The examples are resolved by the engine: check they say what the rulebook says.
+    from webapp import tutorial
+    results = {example['id']: [row[2] for row in example['rows']] for example in tutorial.examples()}
+    assert results == {
+        'standoff': ['bounce', 'bounce'],
+        'support': ['succeeds', 'support given', 'dislodged'],
+        'cut': ['bounce', 'cut', 'holds', 'bounce'],
+        'support-hold': ['bounce', 'support given', 'holds', 'support given'],
+        'convoy': ['succeeds', 'convoy made'],
+    }
+    diagram = anonymous.get('/help/diagram/convoy.svg')
+    assert diagram.status_code == 200 and diagram.mimetype == 'image/svg+xml' and diagram.data.startswith(b'<svg')
+    assert anonymous.get('/help/diagram/unknown.svg').status_code == 404
+    # The rulebook is for logged-in players only.
+    assert anonymous.get('/rules.pdf').status_code == 302
+    rulebook = Browser(app, 'carla').get('/rules.pdf')
+    assert rulebook.status_code == 200 and rulebook.mimetype == 'application/pdf' and rulebook.data[:4] == b'%PDF'
+    assert 'private' in rulebook.headers['Cache-Control']

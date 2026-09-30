@@ -12,10 +12,11 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from flask import (Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for)
+from flask import (Blueprint, Response, abort, current_app, flash, g, redirect, render_template, request,
+                   send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay
+from webapp import gameplay, tutorial
 from webapp.users import check_login, load_users
 
 LOGGER = logging.getLogger(__name__)
@@ -242,6 +243,37 @@ def history(phase=None):
             'orders': gameplay.phase_orders(game, by_name[phase]),
         }
     return render_template('history.html', **context)
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Help
+# ----------------------------------------------------------------------------------------------------------------
+@bp.route('/help')
+def help_page():
+    """ Cheat sheet: rules in brief, worked examples, how to use this site, our province abbreviations.
+        Public: it shows nothing about the game in progress. """
+    return render_template('help.html', examples=tutorial.examples(), provinces=tutorial.provinces(),
+                           phase_hours=gameplay.DEFAULT_PHASE_HOURS)
+
+
+@bp.route('/help/diagram/<example_id>.svg')
+def help_diagram(example_id):
+    """ Picture of a worked example. Served separately so browsers cache it (each is ~100 KB). """
+    for example in tutorial.examples():
+        if example['id'] == example_id:
+            return Response(example['svg'], mimetype='image/svg+xml',
+                            headers={'Cache-Control': 'public, max-age=86400'})
+    abort(404)
+
+
+@bp.route('/rules.pdf')
+@login_required
+def rules_pdf():
+    """ The official rulebook (4th edition, 2000), shown in the browser. Players only: it is copyrighted. """
+    response = send_from_directory(current_app.root_path, 'rules.pdf', mimetype='application/pdf', max_age=86400)
+    response.cache_control.public = False
+    response.cache_control.private = True       # behind the login: browsers may cache it, shared proxies not
+    return response
 
 
 # ----------------------------------------------------------------------------------------------------------------

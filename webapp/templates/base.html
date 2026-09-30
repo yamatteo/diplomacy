@@ -36,6 +36,18 @@
   .phases a, .phases strong { display: inline-block; margin: 0 .5rem .3rem 0; }
   .result { color: #9a6700; }
   label { display: block; margin: .5rem 0; }
+  code { background: #eaeef2; padding: .05rem .3rem; border-radius: 4px; font-size: .92em; white-space: nowrap; }
+  .examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+  .example { border: 1px solid var(--line); border-radius: 8px; padding: .8rem; }
+  .example img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; display: block; }
+  .example h3 { margin: 0 0 .5rem; font-size: 1rem; }
+  .example-row { padding: .2rem 0; border-top: 1px solid var(--line); }
+  .toc { columns: 2 16rem; padding-left: 1.2rem; }
+  .provinces { columns: 3 12rem; }
+  .provinces div { break-inside: avoid; padding: .1rem 0; }
+  .help h2 { border-bottom: 1px solid var(--line); padding-bottom: .2rem; margin-top: 2rem; }
+  .help h3 { font-size: 1rem; margin: 1.1rem 0 .3rem; }
+  .help li { margin: .25rem 0; }
 </style>
 </head>
 <body>
@@ -47,6 +59,7 @@
       <a href="{{ url_for('game.history') }}">History</a>
       {% if g.user.is_admin %}<a href="{{ url_for('game.admin') }}">Admin</a>{% endif %}
     {% endif %}
+    <a href="{{ url_for('game.help_page') }}">Help</a>
   </nav>
   {% if g.user %}
     <span class="muted">{{ g.user.name }}{% if g.user.power %} ({{ g.user.power|title }}){% endif %}</span>
