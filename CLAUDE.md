@@ -24,7 +24,8 @@ uv project (`pyproject.toml` / `uv.lock`, both packages installed editable). Kee
 
 ```bash
 uv sync                                        # .venv with Flask, pytest, diplomacy + webapp
-uv run pytest                                  # all tests (~10 s)
+uv run pytest                                  # all tests (~5 s)
+uv run pytest webapp                           # web app tests only (~1 s)
 uv run pytest diplomacy/tests/test_datc.py::TestDATC::test_6_a_1    # one test
 uv run flask --app webapp run --debug          # http://127.0.0.1:5000; logs to instance/logs/app.log
 DIPLOMACY_DEBUG_TOKEN=x uv run flask --app webapp run   # enables /debug/info, /debug/logs, /debug/error (?token=x)
@@ -34,7 +35,15 @@ Convoy paths are precomputed in `diplomacy/maps/convoy_paths_cache.pkl`. A map m
 
 ## Architecture
 
-- **`webapp/`**: Flask app factory `create_app()` (config from `DIPLOMACY_*` env vars, set in the PythonAnywhere WSGI file whose template is `deploy/pythonanywhere_wsgi.py`). Logs go to a rotating file in the data dir and to stderr (the PythonAnywhere error log). Every request is logged with a request id; `/debug/*` endpoints are token-protected and return 404 when the token is unset. `diagnostics.py` collects environment info for startup logs and `/debug/info`.
+Web app (`webapp/`):
+
+- **`__init__.py`**: app factory `create_app()`. Config from `DIPLOMACY_*` env vars (set in the PythonAnywhere WSGI file, template `deploy/pythonanywhere_wsgi.py`). Sets up logging (rotating file in the data dir + stderr, which is the PythonAnywhere error log), request ids, the error handler and the token-protected `/debug/*` endpoints (404 when the token is unset). `/debug/info` = `diagnostics.environment_info()` + `game_diagnostics()` (users without passwords, game summary without orders).
+- **Data dir** (`DIPLOMACY_DATA_DIR`, default `./instance`): `users.txt`, `game.json`, `backups/` (copy before each processed phase), `archive/` (replaced games), `secret_key`, `logs/app.log`.
+- **`users.py`**: plain-text users file, `username:password:POWER[:admin]`, re-read on every request. Auto-created with a random-password `admin` if missing.
+- **`store.py`**: `GameStore` keeps the single game as `{"meta", "game": Game.to_dict()}` in `game.json`; `locked()` is an exclusive file lock held for the whole request, writes are atomic.
+- **`gameplay.py`**: everything between views and engine. `meta` holds the web app's own state (deadline, `ready`/`submitted` per power, phase lengths); the engine's own wait/deadline/controller fields are not used. `process_if_due()` is the lazy scheduler: a phase is processed when all powers that have a player and something to order are ready, or the deadline passed. Powers without a player never block and just hold. With no players at all nothing is auto-processed.
+- **`views.py`**: blueprint with login, game page, `/orders`, `/history`, `/admin/*`. Every game request goes through `open_game()` (lock, load, `process_if_due`). All POSTs need the session CSRF token. Orders are only accepted if they are in `game.get_all_possible_orders()` and the form's phase matches the current phase.
+- Secrecy rule: a power's pending orders are shown only to that power (form + arrows on its own map); everything becomes public in history once the phase is processed. Keep orders and passwords out of `/debug/info`; orders are logged in `app.log` (needed for debugging), so the debug token must stay with the admin.
 
 Engine package (`diplomacy/`, from upstream):
 
@@ -49,3 +58,4 @@ Engine package (`diplomacy/`, from upstream):
 - `tests/test_datc.py` holds the DATC adjudication cases; `test_datc_no_check.py` and `test_datc_no_expand.py` subclass it to re-run the suite with order checking/expansion disabled — adjudication changes must pass all three.
 - `tests/test_readme.py` plays a full random game and checks the save/load round trip.
 - Other unit tests live next to their modules (`utils/tests`, `maps/tests`).
+- `webapp/tests/test_app.py` drives the web app end to end through Flask's test client against a temp data dir (`Browser` helper handles login and CSRF).

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}History · Diplomacy{% endblock %}
+{% block content %}
+<h1>History</h1>
+{% if not phases %}
+  <div class="card muted">No phase has been processed yet.</div>
+{% else %}
+  <div class="card phases">
+    {% for name in phases %}
+      {% if name == phase %}<strong>{{ name }}</strong>{% else %}<a href="{{ url_for('game.history', phase=name) }}">{{ name }}</a>{% endif %}
+    {% endfor %}
+  </div>
+  <h2>{{ phase_title }} <span class="muted">{{ phase }}</span></h2>
+  <p class="muted">The map shows the position at the start of the phase, with the orders given.</p>
+  <div class="card map">{{ svg }}</div>
+  <div class="card">{% include "_orders_table.html" %}</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ phase }} · Diplomacy{% endblock %}
+{% block content %}
+<h1>{{ phase_title }} <span class="muted">{{ phase }}</span></h1>
+{% if done %}
+  <div class="flash info">
+    The game is over.
+    {% if outcome and outcome|length > 1 %}
+      {{ 'Winner' if outcome|length == 2 else 'Draw between' }}: {{ outcome[1:]|map('title')|join(', ') }}.
+    {% endif %}
+  </div>
+{% else %}
+  <p><strong>Deadline:</strong> {{ deadline }}</p>
+{% endif %}
+
+<div class="card map">{{ svg }}</div>
+
+{% if choices %}
+<div class="card">
+  <h2 style="margin-top: 0">Your orders ({{ my_power|title }})</h2>
+  <p class="muted">
+    {{ choices.note }}
+    {% if my_ready %}You are marked ready.
+    {% elif my_submitted %}Your orders are saved, but you are not marked ready.
+    {% else %}You have not submitted orders for this phase yet.{% endif %}
+    Other players cannot see your orders until the phase is processed; you can change them until then.
+  </p>
+  <form method="post" action="{{ url_for('game.orders') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <input type="hidden" name="phase" value="{{ phase }}">
+    <div class="orders-grid">
+      {% for item in choices['items'] %}
+        <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label }}</strong></label>
+        <select id="order_{{ item.loc }}" name="order_{{ item.loc }}">
+          <option value="">— {{ choices.default }} —</option>
+          {% for group, group_orders in item.groups %}
+            <optgroup label="{{ group }}">
+              {% for order in group_orders %}
+                <option value="{{ order }}" {% if order == item.current %}selected{% endif %}>{{ order }}</option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+      {% endfor %}
+    </div>
+    <label><input type="checkbox" name="ready" value="yes" {% if my_ready or not my_submitted %}checked{% endif %}>
+      I'm done: process the phase as soon as everybody is ready</label>
+    <button class="primary">Save orders</button>
+  </form>
+</div>
+{% elif my_power and not done %}
+<div class="card muted">You have nothing to order in this phase.</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top: 0">Powers</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Power</th><th>Player</th><th>Centers</th><th>Units</th><th>This phase</th></tr>
+    {% for row in status %}
+      <tr>
+        <td>{{ row.power|title }}</td><td>{{ row.player or '—' }}</td>
+        <td>{{ row.centers }}</td><td>{{ row.units }}</td><td>{{ row.state }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+{% if last_orders %}
+<div class="card">
+  <h2 style="margin-top: 0">Previous phase: <a href="{{ url_for('game.history', phase=last_phase) }}">{{ last_phase }}</a></h2>
+  {% with orders = last_orders %}{% include "_orders_table.html" %}{% endwith %}
+</div>
+{% endif %}
+{% endblock %}

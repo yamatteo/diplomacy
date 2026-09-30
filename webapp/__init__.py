@@ -5,20 +5,29 @@
     - DIPLOMACY_DATA_DIR: folder for logs and game data (default: <repo>/instance).
     - DIPLOMACY_DEBUG_TOKEN: enables the /debug/* endpoints; pass it as ?token=... or X-Debug-Token header.
     - DIPLOMACY_LOG_LEVEL: root log level (default: DEBUG).
+    - DIPLOMACY_TIMEZONE: time zone used to display deadlines (default: Europe/Rome).
+
+    Files in the data dir: users.txt (players, see webapp/users.py), game.json (+ backups/, archive/),
+    secret_key (signs session cookies), logs/app.log.
 """
 import hmac
 import logging
 import logging.handlers
 import os
+import secrets
 import sys
 import time
 import traceback
 import uuid
 from collections import deque
+from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, g, jsonify, request
 
 from webapp.diagnostics import REPO_DIR, environment_info
+from webapp.store import GameStore
+from webapp.users import ensure_users_file, load_users, users_summary
 
 LOGGER = logging.getLogger('webapp')
 LOG_FORMAT = '%(asctime)s %(levelname)s [pid %(process)d] [%(request_id)s] %(name)s: %(message)s'
@@ -62,6 +71,36 @@ def tail(path, lines):
         return ''.join(deque(file, maxlen=lines))
 
 
+def load_secret_key(path):
+    """ Returns the key signing session cookies, creating it on first run. Deleting the file logs everyone out. """
+    if not os.path.exists(path):
+        with open(path, 'w', encoding='utf-8') as file:
+            file.write(secrets.token_hex(32))
+        os.chmod(path, 0o600)
+        LOGGER.info('Created session secret key file %s', path)
+    with open(path, encoding='utf-8') as file:
+        return file.read().strip()
+
+
+def game_diagnostics(app):
+    """ Users and game state for /debug/info. Never raises: a broken game file is exactly when this is needed. """
+    from webapp import gameplay     # pylint: disable=import-outside-toplevel
+    result = {}
+    try:
+        users = load_users(app.config['USERS_FILE'])
+        result['users'] = users_summary(users)
+        store = app.config['GAME_STORE']
+        result['game_file'] = {'path': store.path, 'exists': store.exists(),
+                               'size_bytes': os.path.getsize(store.path) if store.exists() else 0,
+                               'backups': sorted(os.listdir(store.backup_dir))[-10:]
+                                          if os.path.isdir(store.backup_dir) else []}
+        game, meta = store.load()
+        result['game'] = gameplay.game_summary(game, meta, users) if game else None
+    except Exception:   # pylint: disable=broad-except
+        result['error'] = traceback.format_exc()
+    return result
+
+
 def create_app():
     """ Application factory (used by the WSGI file and by `flask --app webapp run`). """
     started = time.time()
@@ -70,11 +109,24 @@ def create_app():
         'DATA_DIR': data_dir,
         'LOG_FILE': os.path.join(data_dir, 'logs', 'app.log'),
         'DEBUG_TOKEN': os.environ.get('DIPLOMACY_DEBUG_TOKEN', ''),
+        'USERS_FILE': os.path.join(data_dir, 'users.txt'),
+        'TIMEZONE': os.environ.get('DIPLOMACY_TIMEZONE', 'Europe/Rome'),
     }
     setup_logging(config['LOG_FILE'], os.environ.get('DIPLOMACY_LOG_LEVEL', 'DEBUG').upper())
 
+    try:
+        ZoneInfo(config['TIMEZONE'])
+    except Exception:   # pylint: disable=broad-except
+        LOGGER.error('Unknown DIPLOMACY_TIMEZONE %r: falling back to UTC', config['TIMEZONE'])
+        config['TIMEZONE'] = 'UTC'
+
     app = Flask(__name__)
     app.config.update(config)
+    app.config['GAME_STORE'] = GameStore(data_dir)
+    app.secret_key = load_secret_key(os.path.join(data_dir, 'secret_key'))
+    app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(days=90), SESSION_COOKIE_SAMESITE='Lax',
+                      SESSION_COOKIE_HTTPONLY=True)
+    ensure_users_file(config['USERS_FILE'])
 
     info = environment_info(config)
     LOGGER.info('=== App starting ===')
@@ -84,6 +136,8 @@ def create_app():
         LOGGER.warning('DIPLOMACY_DEBUG_TOKEN is not set: /debug/* endpoints are disabled')
     if not info['in_virtualenv']:
         LOGGER.warning('Not running inside a virtualenv: check the virtualenv path on the Web tab')
+    for key, value in game_diagnostics(app).items():
+        LOGGER.info('startup %s = %r', key, value)
 
     @app.before_request
     def start_request():
@@ -118,11 +172,6 @@ def create_app():
             LOGGER.warning('Rejected debug access to %s from %s', request.path, g.client_ip)
             abort(404)
 
-    @app.route('/')
-    def index():
-        return ('<!doctype html><title>Diplomacy</title>'
-                '<h1>Diplomacy server is running</h1><p>Commit %s</p>' % info['git']['commit'])
-
     @app.route('/healthz')
     def healthz():
         return jsonify(status='ok', commit=info['git']['commit'], uptime_s=round(time.time() - started))
@@ -130,7 +179,8 @@ def create_app():
     @app.route('/debug/info')
     def debug_info():
         require_debug_token()
-        return jsonify(dict(environment_info(app.config), uptime_s=round(time.time() - started)))
+        return jsonify(dict(environment_info(app.config), uptime_s=round(time.time() - started),
+                            **game_diagnostics(app)))
 
     @app.route('/debug/logs')
     def debug_logs():
@@ -143,6 +193,9 @@ def create_app():
         """ Deliberately fails, to check that tracebacks reach the logs. """
         require_debug_token()
         raise RuntimeError('Deliberate test error from /debug/error')
+
+    from webapp import views    # pylint: disable=import-outside-toplevel
+    app.register_blueprint(views.bp)
 
     LOGGER.info('=== App ready in %.2f s ===', time.time() - started)
     return app

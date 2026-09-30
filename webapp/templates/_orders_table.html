@@ -1,0 +1,17 @@
+<div class="table-wrap">
+<table>
+  <tr><th>Power</th><th>Orders</th></tr>
+  {% for power, rows in orders %}
+    <tr>
+      <td>{{ power|title }}</td>
+      <td>
+        {% for order, result in rows %}
+          <div>{{ order }}{% if result %} <span class="result">({{ result }})</span>{% endif %}</div>
+        {% else %}
+          <span class="muted">no orders</span>
+        {% endfor %}
+      </td>
+    </tr>
+  {% endfor %}
+</table>
+</div>

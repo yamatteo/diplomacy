@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Admin · Diplomacy{% endblock %}
+{% block content %}
+<h1>Admin</h1>
+
+{% if has_game and not done %}
+<div class="card">
+  <h2 style="margin-top: 0">Current phase: {{ phase }}</h2>
+  <p><strong>Deadline:</strong> {{ deadline }}</p>
+  <form method="post" action="{{ url_for('game.admin_deadline') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label>Set the deadline of this phase to
+      <input type="number" name="hours" min="0" max="1440" step="0.5" style="width: 6rem"> hours from now
+      <span class="muted">(leave empty for no deadline)</span></label>
+    <button>Set deadline</button>
+  </form>
+  <form method="post" action="{{ url_for('game.admin_process') }}" style="margin-top: 1rem">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <button>Process this phase now</button>
+    <span class="muted">with the orders submitted so far; units without orders hold.</span>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top: 0">Phase lengths</h2>
+  <p class="muted">Hours given to each kind of phase; 0 means no deadline. Applies from the next phase.</p>
+  <form method="post" action="{{ url_for('game.admin_settings') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    {% for kind, name in phase_names.items() %}
+      <label>{{ name }}
+        <input type="number" name="hours_{{ kind }}" min="0" max="1440" step="0.5" value="{{ phase_hours[kind] }}" style="width: 6rem"> hours</label>
+    {% endfor %}
+    <button>Save phase lengths</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top: 0">End the game</h2>
+  <form method="post" action="{{ url_for('game.admin_draw') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label><input type="checkbox" name="confirm" value="yes"> End the game now as a draw between the surviving powers</label>
+    <button class="danger">End as a draw</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top: 0">New game</h2>
+  <p class="muted">Starts a standard game at Spring 1901.
+    {% if has_game %}The current game is moved to the archive folder, not deleted.{% endif %}</p>
+  <form method="post" action="{{ url_for('game.admin_new_game') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label><input type="checkbox" name="confirm" value="yes"> Yes, start a new game{% if has_game %} and archive the current one{% endif %}</label>
+    <button class="danger">Start new game</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top: 0">Players</h2>
+  <p class="muted">Edit <code>{{ users_file }}</code> to add players or assign powers; changes apply immediately.
+    Powers without a player give no orders: their units hold.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>User</th><th>Power</th><th>Admin</th></tr>
+    {% for user in users %}
+      <tr><td>{{ user.name }}</td><td>{{ user.power|title if user.power else '—' }}</td><td>{{ 'yes' if user.is_admin else '' }}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

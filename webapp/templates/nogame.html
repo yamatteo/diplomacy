@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>No game yet</h1>
+  {% if g.user.is_admin %}
+    <p>Start one from the <a href="{{ url_for('game.admin') }}">admin page</a>.</p>
+  {% else %}
+    <p>The admin has not started a game yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

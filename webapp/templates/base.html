@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Diplomacy{% endblock %}</title>
+<style>
+  :root { --ink: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #f6f8fa; --accent: #0b5cad; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; padding: .6rem 1rem;
+           background: #fff; border-bottom: 1px solid var(--line); }
+  header strong { font-size: 1.1rem; }
+  header nav { display: flex; gap: 1rem; flex: 1; }
+  header form { margin: 0; }
+  main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.4rem; margin: .2rem 0 .6rem; }
+  h2 { font-size: 1.1rem; margin: 1.4rem 0 .5rem; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .muted { color: var(--muted); }
+  .flash { padding: .6rem .9rem; border-radius: 6px; margin-bottom: .6rem; border: 1px solid var(--line); background: #fff; }
+  .flash.error { border-color: #cf222e; background: #ffebe9; }
+  .flash.ok { border-color: #1a7f37; background: #dafbe1; }
+  .flash.info { border-color: var(--accent); background: #ddf4ff; }
+  .map svg { width: 100%; height: auto; display: block; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .3rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .table-wrap { overflow-x: auto; }
+  select, input[type=text], input[type=password], input[type=number] { font: inherit; padding: .35rem; max-width: 100%; }
+  select { width: 100%; }
+  button { font: inherit; padding: .45rem .9rem; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { border-color: #cf222e; color: #cf222e; }
+  .orders-grid { display: grid; grid-template-columns: max-content 1fr; gap: .5rem .8rem; align-items: center; }
+  .phases a, .phases strong { display: inline-block; margin: 0 .5rem .3rem 0; }
+  .result { color: #9a6700; }
+  label { display: block; margin: .5rem 0; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Diplomacy</strong>
+  <nav>
+    {% if g.user %}
+      <a href="{{ url_for('game.index') }}">Game</a>
+      <a href="{{ url_for('game.history') }}">History</a>
+      {% if g.user.is_admin %}<a href="{{ url_for('game.admin') }}">Admin</a>{% endif %}
+    {% endif %}
+  </nav>
+  {% if g.user %}
+    <span class="muted">{{ g.user.name }}{% if g.user.power %} ({{ g.user.power|title }}){% endif %}</span>
+    <form method="post" action="{{ url_for('game.logout') }}">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <button>Log out</button>
+    </form>
+  {% endif %}
+</header>
+<main>
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+    <div class="flash {{ category }}">{{ message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
