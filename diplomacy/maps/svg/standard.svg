@@ -398,12 +398,13 @@
 
         /* text */
         svg { font-size: 100% }
-        .labeltext24 {text-anchor:middle; stroke-width:0.1; stroke:black; fill:black; font-family:serif,sans-serif; font-style:italic; font-size:1.4em;}
-        .labeltext18 {text-anchor:middle; stroke-width:0.1; stroke:black; fill:black; font-family:serif,sans-serif; font-style:italic; font-size:1.1em;}
+        .labeltext24 {text-anchor:middle; fill:#1a1a1a; font-family:Verdana,DejaVu Sans,sans-serif; font-weight:bold; font-size:1.25em;}
+        .labeltext18 {text-anchor:middle; fill:#1a1a1a; font-family:Verdana,DejaVu Sans,sans-serif; font-weight:bold; font-size:0.85em;}
         .currentnotetext {font-family:serif,sans-serif; font-size:1.5em; fill:black; stroke:black;}
         .currentnoterect {fill:#c5dfea;}
         .currentphasetext {font-family:serif,sans-serif; font-size:2.5em; fill:black; stroke:black;}
 
+        .sealabel {font-style:italic;}
         .labeltext24 text {cursor:default;}
 
         /* map and object features */
@@ -710,6 +711,85 @@
         <path class="water" d="M 1570 1032 C 1570 1032 1546 1047 1546 1047 C 1546 1047 1511 1064 1511 1064 C 1511 1064 1483 1087 1483 1087 C 1483 1087 1462 1097 1462 1097 C 1462 1097 1474 1104 1474 1104 C 1481 1109 1488 1117 1496 1118 C 1505 1119 1513 1102 1521 1115 C 1523 1119 1523 1123 1520 1126 C 1515 1130 1507 1128 1503 1130 C 1500 1132 1499 1135 1496 1137 C 1492 1140 1489 1140 1486 1142 C 1483 1144 1478 1151 1475 1154 C 1471 1158 1467 1161 1461 1159 C 1457 1156 1454 1153 1453 1148 C 1453 1145 1454 1140 1452 1137 C 1449 1133 1442 1133 1438 1131 C 1435 1130 1432 1128 1432 1125 C 1433 1120 1438 1115 1442 1112 C 1444 1110 1448 1109 1449 1106 C 1450 1103 1448 1101 1445 1101 C 1439 1101 1428 1108 1417 1105 C 1408 1102 1409 1097 1402 1094 C 1405 1089 1409 1089 1415 1088 C 1413 1087 1413 1086 1411 1085 C 1404 1084 1389 1089 1384 1093 C 1380 1097 1378 1102 1375 1104 C 1372 1105 1369 1103 1366 1102 C 1368 1105 1371 1109 1371 1112 C 1371 1116 1368 1120 1366 1123 C 1364 1127 1362 1133 1361 1138 C 1359 1145 1360 1152 1357 1158 C 1353 1166 1347 1166 1344 1176 C 1344 1176 1339 1210 1339 1210 C 1336 1216 1332 1214 1329 1218 C 1325 1223 1327 1230 1325 1235 C 1325 1235 1322 1246 1322 1246 C 1322 1250 1325 1253 1327 1256 C 1327 1256 1337 1273 1337 1273 C 1338 1275 1340 1279 1343 1280 C 1347 1281 1350 1277 1355 1275 C 1366 1273 1370 1281 1375 1289 C 1375 1289 1400 1284 1400 1284 C 1406 1283 1414 1283 1419 1280 C 1419 1280 1442 1257 1442 1257 C 1453 1248 1463 1244 1477 1241 C 1477 1241 1501 1237 1501 1237 C 1506 1236 1507 1233 1511 1233 C 1519 1232 1522 1247 1529 1244 C 1530 1243 1532 1242 1533 1241 C 1534 1240 1536 1238 1537 1237 C 1537 1237 1552 1247 1552 1247 C 1552 1247 1553 1242 1553 1242 C 1561 1246 1570 1250 1579 1251 C 1582 1251 1584 1250 1587 1250 C 1603 1249 1607 1247 1622 1242 C 1640 1236 1637 1241 1655 1229 C 1670 1218 1687 1202 1673 1183 C 1670 1179 1665 1173 1660 1171 C 1652 1167 1640 1168 1630 1164 C 1620 1159 1611 1151 1601 1145 C 1592 1140 1583 1136 1573 1133 C 1573 1133 1556 1129 1556 1129 C 1556 1129 1543 1124 1543 1124 C 1538 1123 1533 1122 1530 1117 C 1528 1115 1527 1111 1530 1109 C 1534 1108 1539 1112 1543 1110 C 1547 1108 1546 1102 1547 1098 C 1549 1088 1555 1079 1556 1069 C 1554 1069 1551 1069 1549 1069 C 1544 1068 1540 1063 1544 1058 C 1544 1058 1565 1042 1565 1042 C 1568 1040 1571 1037 1570 1032 z" id="_bla"/>
     </g>
 
+    <!-- Location abbreviations: part of the map, below supply centers, orders and units -->
+    <g class="labeltext24" id="BriefLabelLayer">
+        <text class="labeltext18 sealabel" x="849.4" y="1100.6">ADR</text>
+        <text class="sealabel" x="1085.7" y="1296.4">AEG</text>
+        <text class="labeltext18" x="933" y="1161">ALB</text>
+        <text x="1368.8" y="1115.5">ANK</text>
+        <text class="labeltext18" x="835" y="1156">APU</text>
+        <text x="1603" y="1145.3">ARM</text>
+        <text class="sealabel" x="827.2" y="660.2">BAL</text>
+        <text class="sealabel" x="1077.8" y="59.3">BAR</text>
+        <text class="labeltext18" x="548" y="756">BEL</text>
+        <text class="labeltext18" x="775" y="694">BER</text>
+        <text class="sealabel" x="1319.8" y="1034.6">BLA</text>
+        <text class="labeltext18" x="788" y="829">BOH</text>
+        <text class="labeltext18" x="430" y="866.4">BRE</text>
+        <text class="labeltext18" x="953.7" y="964.3">BUD</text>
+        <text class="labeltext18" x="1028" y="1101">BUL</text>
+        <text class="labeltext18" x="530.1" y="915.4">BUR</text>
+        <text class="labeltext18" x="447" y="479">CLY</text>
+        <text x="1199" y="1188">CON</text>
+        <text x="718.2" y="584.3">DEN</text>
+        <text class="sealabel" x="1164.4" y="1343.3">EAS</text>
+        <text class="labeltext18" x="496" y="501">EDI</text>
+        <text class="sealabel" x="481" y="764">ENG</text>
+        <text x="1030.3" y="347">FIN</text>
+        <text class="labeltext18" x="940.9" y="840.9">GAL</text>
+        <text class="labeltext18" x="447" y="972.8">GAS</text>
+        <text class="labeltext18" x="974" y="1189">GRE</text>
+        <text class="sealabel" x="929.6" y="538.9">BOT</text>
+        <text class="sealabel" x="525.8" y="1107">LYO</text>
+        <text class="sealabel" x="666" y="635">HEL</text>
+        <text class="labeltext18" x="621" y="715">HOL</text>
+        <text class="sealabel" x="894.1" y="1251.7">ION</text>
+        <text class="sealabel" x="318" y="711.4">IRI</text>
+        <text class="labeltext18" x="691.9" y="753.6">KIE</text>
+        <text class="labeltext18" x="518" y="731">LON</text>
+        <text x="1030.3" y="640.8">LVN</text>
+        <text class="labeltext18" x="450" y="572">LVP</text>
+        <text class="labeltext18" x="572.6" y="962.2">MAR</text>
+        <text class="sealabel" x="153.3" y="815.3">MAO</text>
+        <text x="1568.9" y="572.6">MOS</text>
+        <text class="labeltext18" x="682" y="874">MUN</text>
+        <text x="240.6" y="1317.7">NAF</text>
+        <text class="labeltext18" x="831" y="1222">NAP</text>
+        <text class="sealabel" x="191.6" y="268.2">NAO</text>
+        <text class="sealabel" x="595.5" y="512">NTH</text>
+        <text x="760" y="391.7">NWY</text>
+        <text class="sealabel" x="664.2" y="161.8">NWG</text>
+        <text class="labeltext18" x="491" y="849">PAR</text>
+        <text class="labeltext18" x="492" y="802">PIC</text>
+        <text class="labeltext18" x="624" y="1015">PIE</text>
+        <text transform="translate(175.1 1102.1) rotate(-60)" x="0" y="0">POR</text>
+        <text class="labeltext18" x="938.8" y="687.6">PRU</text>
+        <text class="labeltext18" transform="translate(744 1093) rotate(50)" x="0" y="0">ROM</text>
+        <text class="labeltext18" x="646" y="782">RUH</text>
+        <text class="labeltext18" x="1036.7" y="1015.4">RUM</text>
+        <text class="labeltext18" x="959" y="1053">SER</text>
+        <text x="1479.3" y="937.7">SEV</text>
+        <text class="labeltext18" x="791.9" y="779.1">SIL</text>
+        <text class="sealabel" transform="translate(754.5 571.2) rotate(75)" x="0" y="0">SKA</text>
+        <text x="1194.2" y="1247.5">SMY</text>
+        <text x="302.3" y="1119.7">SPA</text>
+        <text x="1473.1" y="217.1">STP</text>
+        <text x="845.1" y="391.7">SWE</text>
+        <text x="1639.2" y="1292.2">SYR</text>
+        <text class="labeltext18" x="826" y="966.5">TRI</text>
+        <text x="634.4" y="1351.8">TUN</text>
+        <text class="labeltext18" x="694" y="1083">TUS</text>
+        <text class="labeltext18" x="724" y="926">TYR</text>
+        <text class="sealabel" x="710" y="1209.1">TYS</text>
+        <text x="1119.7" y="860">UKR</text>
+        <text class="labeltext18" x="707" y="994">VEN</text>
+        <text class="labeltext18" x="834.5" y="919.6">VIE</text>
+        <text class="labeltext18" x="432" y="718">WAL</text>
+        <text class="labeltext18" x="938.8" y="783.4">WAR</text>
+        <text class="sealabel" x="400.2" y="1209.1">WES</text>
+        <text class="labeltext18" x="503" y="666">YOR</text>
+    </g>
+
     <!-- drawing layer: supply centers -->
     <g id="SupplyCenterLayer">
         <use height="20" id="sc_BUD" width="20" x="891.5" xlink:href="#SupplyCenter" y="905.0"/>
@@ -762,86 +842,6 @@
 
     <!-- above-the-unit drawing layer -->
     <g id="HighestOrderLayer"/>
-
-    <!-- Location abbreviations -->
-    <g class="labeltext24" id="BriefLabelLayer">
-        <text x="649.4" y="924.2">SWI</text>
-        <text class="labeltext18" x="849.4" y="1100.6">ADR</text>
-        <text x="1085.7" y="1296.4">AEG</text>
-        <text class="labeltext18" x="932.4" y="1164.4">ALB</text>
-        <text x="1368.8" y="1115.5">ANK</text>
-        <text class="labeltext18" x="832.3" y="1151.7">APU</text>
-        <text x="1603" y="1145.3">ARM</text>
-        <text x="827.2" y="660.2">BAL</text>
-        <text x="1077.8" y="59.3">BAR</text>
-        <text class="labeltext18" x="591.8" y="796.2">BEL</text>
-        <text class="labeltext18" x="760" y="728">BER</text>
-        <text x="1319.8" y="1034.6">BLA</text>
-        <text class="labeltext18" x="800.4" y="855.8">BOH</text>
-        <text class="labeltext18" x="430" y="866.4">BRE</text>
-        <text class="labeltext18" x="953.7" y="964.3">BUD</text>
-        <text class="labeltext18" x="1021.8" y="1109.1">BUL</text>
-        <text class="labeltext18" x="530.1" y="915.4">BUR</text>
-        <text class="labeltext18" x="457.7" y="479">CLY</text>
-        <text x="1202.8" y="1177.2">CON</text>
-        <text x="718.2" y="584.3">DEN</text>
-        <text x="1164.4" y="1343.3">EAS</text>
-        <text class="labeltext18" x="496" y="500.3">EDI</text>
-        <text x="466.2" y="762.6">ENG</text>
-        <text x="1030.3" y="347">FIN</text>
-        <text class="labeltext18" x="940.9" y="840.9">GAL</text>
-        <text class="labeltext18" x="447" y="972.8">GAS</text>
-        <text class="labeltext18" x="981.4" y="1160.2">GRE</text>
-        <text x="929.6" y="538.9">BOT</text>
-        <text x="525.8" y="1107">LYO</text>
-        <text x="654.2" y="665.4">HEL</text>
-        <text class="labeltext18" x="608.8" y="749.3">HOL</text>
-        <text x="894.1" y="1251.7">ION</text>
-        <text x="318" y="711.4">IRI</text>
-        <text class="labeltext18" x="691.9" y="753.6">KIE</text>
-        <text class="labeltext18" x="500.3" y="734.4">LON</text>
-        <text x="1030.3" y="640.8">LVN</text>
-        <text class="labeltext18" x="449.2" y="564.1">LVP</text>
-        <text class="labeltext18" x="572.6" y="962.2">MAR</text>
-        <text x="153.3" y="815.3">MAO</text>
-        <text x="1568.9" y="572.6">MOS</text>
-        <text class="labeltext18" x="681.2" y="872.8">MUN</text>
-        <text x="240.6" y="1317.7">NAF</text>
-        <text class="labeltext18" x="832.3" y="1211.3">NAP</text>
-        <text x="191.6" y="268.2">NAO</text>
-        <text x="595.5" y="512">NTH</text>
-        <text x="760" y="391.7">NWY</text>
-        <text x="664.2" y="161.8">NWG</text>
-        <text class="labeltext18" x="481.1" y="892">PAR</text>
-        <text class="labeltext18" x="489.6" y="802.5">PIC</text>
-        <text class="labeltext18" x="628" y="1004.8">PIE</text>
-        <text transform="translate(175.1 1102.1) rotate(-60)" x="0" y="0">POR</text>
-        <text class="labeltext18" x="938.8" y="687.6">PRU</text>
-        <text class="labeltext18" transform="translate(729 1092) rotate(45)" x="0" y="0">ROM</text>
-        <text class="labeltext18" x="632.2" y="826">RUH</text>
-        <text class="labeltext18" x="1036.7" y="1015.4">RUM</text>
-        <text class="labeltext18" x="964.3" y="1100.6">SER</text>
-        <text x="1479.3" y="937.7">SEV</text>
-        <text class="labeltext18" x="791.9" y="779.1">SIL</text>
-        <text transform="translate(754.5 571.2) rotate(75)" x="0" y="0">SKA</text>
-        <text x="1194.2" y="1247.5">SMY</text>
-        <text x="302.3" y="1119.7">SPA</text>
-        <text x="1473.1" y="217.1">STP</text>
-        <text x="845.1" y="391.7">SWE</text>
-        <text x="1639.2" y="1292.2">SYR</text>
-        <text class="labeltext18" x="826" y="966.5">TRI</text>
-        <text x="634.4" y="1351.8">TUN</text>
-        <text class="labeltext18" x="706.5" y="1069">TUS</text>
-        <text class="labeltext18" x="717.4" y="936.7">TYR</text>
-        <text x="710" y="1209.1">TYS</text>
-        <text x="1119.7" y="860">UKR</text>
-        <text class="labeltext18" x="749.3" y="962.2">VEN</text>
-        <text class="labeltext18" x="834.5" y="919.6">VIE</text>
-        <text class="labeltext18" x="436.4" y="719.5">WAL</text>
-        <text class="labeltext18" x="938.8" y="783.4">WAR</text>
-        <text x="400.2" y="1209.1">WES</text>
-        <text class="labeltext18" x="496" y="653.5">YOR</text>
-    </g>
 
     <!-- Current phase -->
     <rect x="25" y="25" height="70" width="750" class="currentnoterect" />

@@ -75,6 +75,7 @@ def open_game():
     with store.locked():
         game, meta = store.load()
         if game:
+            g.map_name = game.map_name
             announce_processed(gameplay.process_if_due(game, meta, g.users, store, time.time()))
         yield game, meta, store
 
@@ -104,6 +105,14 @@ def format_delta(seconds):
     if hours:
         return '%d h %d min' % (hours, rest // 60)
     return '%d min' % (rest // 60)
+
+
+@bp.app_template_filter('seas')
+def mark_seas(text):
+    """ Order text -> HTML with sea provinces in italics ('F <i>NTH</i> - NWY'), as on the map. """
+    seas = gameplay.sea_locations(g.get('map_name') or 'standard')
+    return Markup(' ').join(Markup('<span class="sea">%s</span>') % word if word in seas else word
+                            for word in str(text).split(' '))
 
 
 def deadline_text(meta, now):

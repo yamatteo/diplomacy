@@ -11,6 +11,7 @@
     to win, if not the map's default) and ``allies`` ({power: power whose player also controls it}: in the
     2 player game Italy joins the winner of a coin flip in 1902).
 """
+import functools
 import logging
 import random
 import re
@@ -252,6 +253,13 @@ def order_group(order):
     if words[-1] == 'VIA':
         return 'Move via convoy'
     return 'Move'
+
+
+@functools.lru_cache(maxsize=None)
+def sea_locations(map_name):
+    """ Abbreviations of the sea provinces of a map (shown in italics, like on the map). """
+    game_map = Game(map_name=map_name).map
+    return frozenset(loc.upper() for loc in game_map.locs if game_map.area_type(loc) == 'WATER')
 
 
 def order_loc(order):

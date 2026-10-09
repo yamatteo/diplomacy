@@ -19,7 +19,9 @@
   <li><strong>Goal:</strong> control 18 of the 34 supply centers (the dots on the map). Players can also agree to a
     draw between the survivors.</li>
   <li><strong>Units:</strong> armies (<code>A</code>) move on land, fleets (<code>F</code>) on sea and along coasts.
-    All units have the same strength, and a province holds one unit at most.</li>
+    All units have the same strength, and a province holds one unit at most.
+    Sea provinces are written in italics (<code><span class="sea">NTH</span></code>), land ones upright
+    (<code>LON</code>).</li>
   <li><strong>Everybody moves at once.</strong> Orders are secret, then revealed and resolved together.
     Talk, promise and lie as you like: nothing said is binding.</li>
   <li><strong>You have as many units as supply centers.</strong> Centers change hands only at the end of Fall,
@@ -50,7 +52,7 @@
     You must be able to move to the target province yourself (here Burgundy).</td></tr>
   <tr><td>Support a unit in place</td><td><code>F ROM S F TYS</code></td><td>Add 1 to the defence of a unit that is
     not moving (holding, supporting or convoying).</td></tr>
-  <tr><td>Convoy</td><td><code>F NTH C A LON - NWY</code></td><td>A fleet at sea carries an army between two coasts.
+  <tr><td>Convoy</td><td><code>F <span class="sea">NTH</span> C A LON - NWY</code></td><td>A fleet at sea carries an army between two coasts.
     The army is ordered <code>A LON - NWY VIA</code>. Several fleets can form a chain.</td></tr>
   <tr><td>Retreat</td><td><code>A BUR R GAS</code></td><td>Retreat phase only.</td></tr>
   <tr><td>Disband</td><td><code>A BUR D</code></td><td>Remove the unit (retreat and adjustment phases).</td></tr>
@@ -87,7 +89,7 @@
       <img src="{{ url_for('game.help_diagram', example_id=example.id) }}" alt="Map for: {{ example.title }}">
       <p>{{ example.text }}</p>
       {% for power, order, result in example.rows %}
-        <div class="example-row"><span class="muted">{{ power }}</span> <code>{{ order }}</code>
+        <div class="example-row"><span class="muted">{{ power }}</span> <code>{{ order|seas }}</code>
           <span class="result">→ {{ result }}</span></div>
       {% endfor %}
     </div>

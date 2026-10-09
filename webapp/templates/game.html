@@ -33,7 +33,7 @@
       {% if entry.choices.note %}<p class="muted">{{ entry.choices.note }}</p>{% endif %}
       <div class="orders-grid">
         {% for item in entry.choices['items'] %}
-          <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label }}</strong></label>
+          <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label|seas }}</strong></label>
           <select id="order_{{ item.loc }}" name="order_{{ item.loc }}">
             <option value="">— {{ entry.choices.default }} —</option>
             {% for group, group_orders in item.groups %}

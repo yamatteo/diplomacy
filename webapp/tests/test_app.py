@@ -160,6 +160,20 @@ def test_invalid_orders_are_rejected(app):
     assert Browser(app, 'carla').post('/orders', phase='S1901M', order_PAR='A PAR - BUR').status_code == 403
 
 
+def test_sea_provinces_are_in_italics(app):
+    anna = start_game(app)
+    bruno = Browser(app, 'bruno')
+    assert '<strong>F BRE</strong>' in anna.text('/')
+    anna.post('/orders', phase='S1901M', order_BRE='F BRE - MAO', ready='yes')
+    bruno.post('/orders', phase='S1901M', ready='yes')
+    page = anna.text('/')
+    assert '<strong>F <span class="sea">MAO</span></strong>' in page             # orders form
+    assert 'F BRE - <span class="sea">MAO</span>' in page                        # last phase's orders
+    assert 'F BRE - <span class="sea">MAO</span>' in bruno.text('/history/S1901M')
+    assert re.search(r'<text class="sealabel"[^>]*>MAO<', map_of(page))           # map label
+    assert re.search(r'<text class="labeltext18"[^>]*>BRE<', map_of(page))
+
+
 def test_phase_is_processed_when_all_players_are_ready(app):
     anna = start_game(app)
     bruno = Browser(app, 'bruno')

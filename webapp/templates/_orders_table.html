@@ -6,7 +6,7 @@
       <td>{{ power|title }}</td>
       <td>
         {% for order, result in rows %}
-          <div>{{ order }}{% if result %} <span class="result">({{ result }})</span>{% endif %}</div>
+          <div>{{ order|seas }}{% if result %} <span class="result">({{ result }})</span>{% endif %}</div>
         {% else %}
           <span class="muted">no orders</span>
         {% endfor %}
