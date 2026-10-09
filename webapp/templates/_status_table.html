@@ -1,0 +1,10 @@
+{# The Powers table of the game page; refreshed by the game page's script after each autosave. #}
+<table>
+  <tr><th>Power</th><th>Player</th><th>Centers</th><th>Units</th><th>This phase</th></tr>
+  {% for row in status %}
+    <tr>
+      <td>{{ row.power|title }}</td><td>{{ row.player or '—' }}</td>
+      <td>{{ row.centers }}</td><td>{{ row.units }}</td><td>{{ row.state }}</td>
+    </tr>
+  {% endfor %}
+</table>

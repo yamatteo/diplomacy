@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from flask import (Blueprint, Response, abort, current_app, flash, g, redirect, render_template, request,
+from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, redirect, render_template, request,
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
@@ -176,34 +176,53 @@ def index():
         active = [power for power in my_powers if game.get_orderable_locations(power)] if not game.is_game_done else []
         choices = [{'power': power, 'choices': gameplay.order_choices(game, power)} for power in active]
         history = game.get_phase_history()
-        context = {
-            'phase': game.get_current_phase(),
-            'phase_title': phase_title(game.get_current_phase()),
-            'done': game.is_game_done,
-            'outcome': game.outcome,
-            'deadline': deadline_text(meta, now),
-            'status': gameplay.power_status(game, meta, g.users),
-            'svg': Markup(gameplay.render_current(game, orders_of=my_powers)),
-            'my_powers': my_powers,
-            'choices': choices,
-            'seas': sorted(gameplay.sea_locations(game.map_name)),
-            'my_ready': bool(active) and all(meta['ready'].get(power) for power in active),
-            'my_submitted': any(power in meta['submitted'] for power in active),
-            'last_phase': history[-1].name if history else None,
-            'last_orders': gameplay.phase_orders(game, history[-1]) if history else None,
-        }
+        context = dict(
+            my_orders_state(game, meta, my_powers),
+            phase=game.get_current_phase(),
+            phase_title=phase_title(game.get_current_phase()),
+            done=game.is_game_done,
+            outcome=game.outcome,
+            deadline=deadline_text(meta, now),
+            my_powers=my_powers,
+            choices=choices,
+            seas=sorted(gameplay.sea_locations(game.map_name)),
+            last_phase=history[-1].name if history else None,
+            last_orders=gameplay.phase_orders(game, history[-1]) if history else None,
+        )
     return render_template('game.html', **context)
+
+
+def my_orders_state(game, meta, my_powers):
+    """ The parts of the game page that change when the user saves orders: the map with their arrows, the status
+        table and whether they are ready / have submitted. """
+    active = [power for power in my_powers if game.get_orderable_locations(power)] if not game.is_game_done else []
+    return {'svg': Markup(gameplay.render_current(game, orders_of=my_powers)),
+            'status': gameplay.power_status(game, meta, g.users),
+            'my_ready': bool(active) and all(meta['ready'].get(power) for power in active),
+            'my_submitted': any(power in meta['submitted'] for power in active)}
 
 
 @bp.route('/orders', methods=['POST'])
 @login_required
 def orders():
-    """ Receives the orders form. """
+    """ Receives the orders form: either submitted (Save orders / I'm done) or autosaved by the game page's script
+        each time an order is chosen (`autosave=yes`, answered with JSON). An autosave never marks the user ready,
+        so it can never trigger processing, and it takes back "I'm done" if it changes an order. """
     now = time.time()
+    autosave = request.form.get('autosave') == 'yes'
+
+    def fail(messages, reload=False):
+        """ Reports errors: flashed on the next page, or in the JSON reply for an autosave (reload=True: the page
+            is out of date, the script reloads it and the flashed messages are shown there). """
+        if autosave and not reload:
+            return jsonify(ok=False, errors=messages)
+        for message in messages:
+            flash(message, 'error')
+        return jsonify(ok=False, reload=True) if autosave else redirect(url_for('game.index'))
+
     with open_game() as (game, meta, store):
         if not game or game.is_game_done:
-            flash('There is no game in progress.', 'error')
-            return redirect(url_for('game.index'))
+            return fail(['There is no game in progress.'], reload=True)
         powers = gameplay.powers_of(game, meta, g.user)
         if not powers:
             LOGGER.warning('User %r without a playable power tried to submit orders', g.user.name)
@@ -213,9 +232,8 @@ def orders():
             # The phase was processed between showing the form and submitting it.
             LOGGER.warning('Stale orders from %s: form phase=%r current phase=%s', powers,
                            request.form.get('phase'), phase)
-            flash('The game moved on to %s before your orders arrived: they were NOT recorded. '
-                  'Please enter orders for the new phase.' % phase, 'error')
-            return redirect(url_for('game.index'))
+            return fail(['The game moved on to %s before your orders arrived: they were NOT recorded. '
+                         'Please enter orders for the new phase.' % phase], reload=True)
         chosen = {key[len('order_'):]: value.strip() for key, value in request.form.items()
                   if key.startswith('order_')}
         # One form can carry the orders of all the user's powers: split them by the power owning each location.
@@ -225,22 +243,31 @@ def orders():
         if foreign:
             LOGGER.warning('User %r (powers %s) sent orders for locations that are not theirs: %s',
                            g.user.name, powers, foreign)
-            flash('You cannot give orders for %s.' % ', '.join(sorted(foreign)), 'error')
-            return redirect(url_for('game.index'))
+            return fail(['You cannot give orders for %s.' % ', '.join(sorted(foreign))])
         for loc, order in chosen.items():
             if loc in owner:
                 by_power[owner[loc]][loc] = order
-        ready = request.form.get('ready') == 'yes'
+        ready = None if autosave else request.form.get('ready') == 'yes'
+        was_ready = [power for power in by_power if meta['ready'].get(power)]
         errors = []
         for power, power_chosen in by_power.items():
             errors += gameplay.submit_orders(game, meta, power, power_chosen, ready, now)
-        if errors:
-            for error in errors:
-                flash(error, 'error')
-            # Powers processed before the failing one were already updated in memory: save what was accepted.
-            store.save(game, meta)
-            return redirect(url_for('game.index'))
+        # Powers handled before a failing one were already updated in memory: save what was accepted.
         store.save(game, meta)
+        if errors:
+            return fail(errors)
+        if autosave:
+            processed = gameplay.process_if_due(game, meta, g.users, store, now)   # only a passed deadline can
+            if processed:
+                announce_processed(processed)
+                return jsonify(ok=True, reload=True)
+            state = my_orders_state(game, meta, powers)
+            unready = [power for power in was_ready if not meta['ready'].get(power)]
+            LOGGER.info('Autosave by %r in %s: ready=%s no longer ready=%s', g.user.name, phase,
+                        {power: meta['ready'].get(power, False) for power in by_power}, unready)
+            return jsonify(ok=True, ready=state['my_ready'], unready=bool(unready), svg=str(state['svg']),
+                           summary=render_template('_orders_summary.html', **state),
+                           status=render_template('_status_table.html', **state))
         flash('Orders saved for %s%s.' % (phase, ' and marked ready' if ready else
                                           ' (not marked ready: the phase waits for you until the deadline)'), 'ok')
         announce_processed(gameplay.process_if_due(game, meta, g.users, store, now))

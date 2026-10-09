@@ -19,9 +19,8 @@
 <div class="card">
   <h2 style="margin-top: 0">Your orders ({{ choices|map(attribute='power')|map('title')|join(', ') }})</h2>
   <p class="muted">
-    {% if my_ready %}You are marked ready.
-    {% elif my_submitted %}Your orders are saved, but you are not marked ready.
-    {% else %}You have not submitted orders for this phase yet.{% endif %}
+    <span id="orders-summary">{% include "_orders_summary.html" %}</span>
+    <span class="js-only">Each order is saved as soon as you choose it; press <em>I'm done</em> when you have finished.</span>
     Other players cannot see your orders until the phase is processed; you can change them until then.
     <a href="{{ url_for('game.help_page') }}#orders">How orders work</a>.
     Tip: click (or tap) one of your units on the map to choose its order.
@@ -48,14 +47,24 @@
         {% endfor %}
       </div>
     {% endfor %}
-    <label><input type="checkbox" name="ready" value="yes" {% if my_ready or not my_submitted %}checked{% endif %}>
-      I'm done: process the phase as soon as everybody is ready</label>
-    <button class="primary">Save orders</button>
+    {# Without JavaScript: a plain form. With it, orders are autosaved and "I'm done" is a button (it sets this
+       checkbox and submits the form): saving an order never marks the player ready by itself. #}
+    <div class="nojs-only">
+      <label><input type="checkbox" name="ready" value="yes" id="ready-box"
+                    {% if my_ready or not my_submitted %}checked{% endif %}>
+        I'm done: process the phase as soon as everybody is ready</label>
+      <button class="primary">Save orders</button>
+    </div>
+    <div class="js-only orders-actions">
+      <button type="button" id="done-button" class="{{ '' if my_ready else 'primary' }}"
+              data-ready="{{ 'yes' if my_ready else 'no' }}">{{ "I'm not done" if my_ready else "I'm done" }}</button>
+      <span id="autosave-state" class="muted" role="status"></span>
+    </div>
   </form>
 </div>
 
 {# Clicking one of your units on the map opens this dialog. It is built from that unit's <select> above, so it offers
-   exactly the same orders, and choosing one just sets the <select>: the form is still what gets submitted. #}
+   exactly the same orders, and choosing one just sets the <select>, which autosaves the form like any change. #}
 <dialog id="order-dialog" aria-labelledby="od-title"><div class="od-body">
   <div class="od-head">
     <h2 id="od-title"></h2>
@@ -64,14 +73,16 @@
   <p class="muted" id="od-current"></p>
   <div class="od-tabs" id="od-tabs"></div>
   <div id="od-list"></div>
-  <p class="muted od-foot"><span>Orders are sent when you press <em>Save orders</em>.</span>
-    <button type="button" class="primary" id="od-save">Save orders</button></p>
+  <p class="muted od-foot">The order you choose is saved right away.</p>
 </div></dialog>
 <script>
 (function () {
   var SEAS = new Set({{ seas|tojson }});
   var dialog = document.getElementById('order-dialog');
   var form = document.getElementById('orders-form');
+  var mapBox = document.querySelector('.card.map');
+  var doneButton = document.getElementById('done-button'), saveState = document.getElementById('autosave-state');
+  document.documentElement.classList.add('js');   // shows the .js-only parts, hides .nojs-only
   var tabsBox = document.getElementById('od-tabs'), listBox = document.getElementById('od-list');
   var select = null;
 
@@ -102,9 +113,10 @@
   }
 
   function choose(value) {
+    dialog.close();
+    if (select.value === value) return;
     select.value = value;
     select.dispatchEvent(new Event('change', {bubbles: true}));
-    dialog.close();
   }
 
   // Tabs: Move (with "via convoy" as a second section), Support, Convoy, Retreat...; Hold and Disband are a
@@ -181,23 +193,108 @@
   }
 
   // Your units on the map: <use id="unit_PAR" class="unitfrance"> (or dislodged_unit_PAR in retreat phases),
-  // clickable when the orders form has a <select> for that location and power.
-  var units = [];
-  document.querySelectorAll('.map use[id^="unit_"], .map use[id^="dislodged_unit_"]').forEach(function (use) {
-    var loc = use.id.replace(/^(dislodged_)?unit_/, '');
-    var sel = document.getElementById('order_' + loc.slice(0, 3));
-    if (!sel || ('unit' + sel.dataset.power) !== use.getAttribute('class')) return;
-    var type = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
-    use.classList.add('clickable-unit');
-    use.addEventListener('click', function () {
-      open(sel, (type.indexOf('Fleet') >= 0 ? 'F ' : 'A ') + loc);
+  // clickable when the orders form has a <select> for that location and power. Run again when the map is replaced.
+  function bindUnits() {
+    mapBox.querySelectorAll('use[id^="unit_"], use[id^="dislodged_unit_"]').forEach(function (use) {
+      var loc = use.id.replace(/^(dislodged_)?unit_/, '');
+      var sel = document.getElementById('order_' + loc.slice(0, 3));
+      if (!sel || ('unit' + sel.dataset.power) !== use.getAttribute('class')) return;
+      var type = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+      use.classList.add('clickable-unit');
+      use.addEventListener('click', function () {
+        open(sel, (type.indexOf('Fleet') >= 0 ? 'F ' : 'A ') + loc);
+      });
     });
-    units.push(use);
-  });
+  }
+  bindUnits();
 
   dialog.querySelector('.od-close').addEventListener('click', function () { dialog.close(); });
   dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.close(); });  // backdrop
-  document.getElementById('od-save').addEventListener('click', function () { dialog.close(); form.requestSubmit(); });
+
+  // Autosave: every change sends the whole form with autosave=yes. The server never marks the player ready for
+  // it (so it cannot get the phase processed) and takes back "I'm done" if an order changed. The reply carries
+  // the map with the new arrows, the status table and the summary line. One request at a time: a change made
+  // while saving is sent when the current request ends.
+  var saving = false, saveAgain = false, afterSave = null;
+
+  function showState(text, isError) {
+    saveState.textContent = text;
+    saveState.classList.toggle('error-text', !!isError);
+  }
+
+  function setReady(ready) {
+    doneButton.dataset.ready = ready ? 'yes' : 'no';
+    doneButton.textContent = ready ? "I'm not done" : "I'm done";
+    doneButton.classList.toggle('primary', !ready);
+  }
+
+  function autosave() {
+    if (saving) { saveAgain = true; return; }
+    saving = true;
+    saveAgain = false;
+    showState('Saving…');
+    var data = new FormData(form);
+    data.set('autosave', 'yes');
+    data.delete('ready');
+    fetch(form.action, {method: 'POST', body: data, credentials: 'same-origin'}).then(function (response) {
+      // Anything but JSON (e.g. the login page after a redirect, an error page): reload to show what happened.
+      if (!response.ok || (response.headers.get('Content-Type') || '').indexOf('application/json') < 0) {
+        return {reload: true};
+      }
+      return response.json();
+    }).then(function (reply) {
+      if (reply.reload) {
+        saveAgain = false;
+        afterSave = null;
+        window.location.reload();
+      } else if (!reply.ok) {
+        showState('Not saved: ' + reply.errors.join(' '), true);
+      } else {
+        mapBox.innerHTML = reply.svg;
+        bindUnits();
+        document.getElementById('orders-summary').innerHTML = reply.summary;
+        document.getElementById('status-table').innerHTML = reply.status;
+        setReady(reply.ready);
+        // "Orders saved ... and marked ready" from the last submit may no longer be true.
+        document.querySelectorAll('.flash.ok').forEach(function (f) { f.remove(); });
+        showState(reply.unready ? 'Saved. You changed an order, so you are no longer marked ready.' : 'Saved.');
+      }
+    }).catch(function () {
+      showState('Not saved: connection problem. Change the order again to retry.', true);
+    }).then(function () {
+      saving = false;
+      if (saveAgain) {
+        autosave();
+      } else if (afterSave) {
+        var next = afterSave;
+        afterSave = null;
+        next();
+      }
+    });
+  }
+
+  form.addEventListener('change', function (e) {
+    if (e.target.tagName === 'SELECT') autosave();
+  });
+
+  // "I'm done" / "I'm not done": a normal submit of the form (orders + ready flag), after any pending autosave so
+  // that an older autosave cannot arrive later and take the flag back.
+  doneButton.addEventListener('click', function () {
+    function submit() {
+      document.getElementById('ready-box').checked = doneButton.dataset.ready !== 'yes';
+      form.submit();
+    }
+    if (saving) {
+      afterSave = submit;
+      showState('Saving…');
+    } else {
+      submit();
+    }
+  });
+
+  window.addEventListener('beforeunload', function (e) {
+    if (saving || saveAgain) e.preventDefault();
+  });
 })();
 </script>
 {% elif my_powers and not done %}
@@ -206,17 +303,7 @@
 
 <div class="card">
   <h2 style="margin-top: 0">Powers</h2>
-  <div class="table-wrap">
-  <table>
-    <tr><th>Power</th><th>Player</th><th>Centers</th><th>Units</th><th>This phase</th></tr>
-    {% for row in status %}
-      <tr>
-        <td>{{ row.power|title }}</td><td>{{ row.player or '—' }}</td>
-        <td>{{ row.centers }}</td><td>{{ row.units }}</td><td>{{ row.state }}</td>
-      </tr>
-    {% endfor %}
-  </table>
-  </div>
+  <div class="table-wrap" id="status-table">{% include "_status_table.html" %}</div>
 </div>
 
 {% if last_orders %}

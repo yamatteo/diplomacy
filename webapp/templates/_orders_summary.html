@@ -1,0 +1,4 @@
+{# Where the user stands in this phase; refreshed by the game page's script after each autosave. #}
+{% if my_ready %}You are marked ready: the phase is processed as soon as everybody is. Changing an order takes this back.
+{% elif my_submitted %}Your orders are saved, but you are not marked ready.
+{% else %}You have not submitted orders for this phase yet.{% endif %}

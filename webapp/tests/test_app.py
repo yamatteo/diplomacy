@@ -150,6 +150,61 @@ def test_orders_are_saved_secret_and_editable(app):
     assert orders == {'A PAR': '- PIC'}
 
 
+def test_autosave_never_marks_ready_and_changes_take_ready_back(app):
+    anna = start_game(app)
+    bruno = Browser(app, 'bruno')
+    map_before = map_of(anna.text('/'))
+
+    def autosave(browser, **orders):
+        response = browser.post('/orders', phase='S1901M', autosave='yes', ready='yes', **orders)
+        assert response.status_code == 200
+        return response.get_json()
+
+    # Choosing the default for every unit changes nothing: France is not even "submitted".
+    reply = autosave(anna, order_PAR='', order_BRE='', order_MAR='')
+    assert reply['ok'] and not reply['ready'] and not reply['unready']
+    assert 'FRANCE' not in read_game_file(app)['meta']['submitted']
+    # A real choice is saved and drawn on her map at once, but not marked ready even if the form says so.
+    reply = autosave(anna, order_PAR='A PAR - BUR')
+    assert reply['ok'] and not reply['ready']
+    assert reply['svg'] != map_before[len('<div class="card map">'):] and '<svg' in reply['svg']
+    assert 'orders submitted, not ready' in reply['status'] and 'not marked ready' in reply['summary']
+    data = read_game_file(app)
+    assert data['game']['powers']['FRANCE']['orders'] == {'A PAR': '- BUR'}
+    assert data['meta']['ready'] == {'FRANCE': False}
+    # "I'm done" is a normal submit; autosaving the same orders again keeps it...
+    anna.post('/orders', phase='S1901M', order_PAR='A PAR - BUR', ready='yes')
+    reply = autosave(anna, order_PAR='A PAR - BUR')
+    assert reply['ready'] and not reply['unready'] and 'You are marked ready' in reply['summary']
+    # ...changing an order takes it back.
+    reply = autosave(anna, order_PAR='A PAR - PIC')
+    assert not reply['ready'] and reply['unready']
+    assert read_game_file(app)['meta']['ready'] == {'FRANCE': False}
+    # The last player's autosaves never get the phase processed, even when everybody else is ready.
+    anna.post('/orders', phase='S1901M', order_PAR='A PAR - PIC', ready='yes')
+    autosave(bruno, order_MUN='A MUN - BUR')
+    data = read_game_file(app)
+    assert data['game']['phase'] == 'SPRING 1901 MOVEMENT' and data['meta']['ready'] == {'FRANCE': True,
+                                                                                         'GERMANY': False}
+    bruno.post('/orders', phase='S1901M', order_MUN='A MUN - BUR', ready='yes')
+    assert read_game_file(app)['game']['phase'] == 'FALL 1901 MOVEMENT'
+    # An autosave from the old phase's page is refused and the page told to reload, where the error is shown.
+    assert autosave(anna, order_PAR='A PAR - PIC') == {'ok': False, 'reload': True}
+    assert 'NOT recorded' in anna.text('/')
+
+
+def test_autosave_errors_are_reported_in_the_reply(app):
+    anna = start_game(app)
+    reply = anna.post('/orders', phase='S1901M', autosave='yes', order_PAR='A PAR - MOS').get_json()
+    assert reply['ok'] is False and 'is not a valid order' in reply['errors'][0]
+    reply = anna.post('/orders', phase='S1901M', autosave='yes', order_BER='A BER - KIE').get_json()
+    assert reply == {'ok': False, 'errors': ['You cannot give orders for BER.']}
+    assert read_game_file(app)['game']['powers']['FRANCE']['orders'] == {}
+    page = anna.text('/')
+    assert 'is not a valid order' not in page and 'You cannot give' not in page      # not flashed again later
+    assert 'id="done-button"' in page and 'name="ready"' in page        # JS button, and the no-JS checkbox
+
+
 def test_invalid_orders_are_rejected(app):
     anna = start_game(app)
     anna.post('/orders', phase='S1901M', order_PAR='A PAR - MOS')

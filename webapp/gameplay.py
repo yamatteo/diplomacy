@@ -309,7 +309,10 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
     """ Replaces the orders of a power for the current phase.
 
         :param chosen: dict of location -> order string ('' for the default).
-        :param ready: True if the player is done and the phase may be processed early.
+        :param ready: True if the player is done and the phase may be processed early, False if not. None is an
+            autosave (a single order changed on the page): it never marks the power ready, keeps the ready flag
+            if the orders are unchanged, and clears it if they changed, so a player who said "I'm done" and then
+            changes an order is no longer done.
         :return: list of error messages; empty if the orders were accepted.
     """
     phase = game.get_current_phase()
@@ -334,6 +337,12 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
         return errors
 
     previous = game.get_orders(power_name)
+    if ready is None:
+        if sorted(previous) == sorted(orders):
+            return []
+        ready = False
+        if meta['ready'].get(power_name):
+            LOGGER.info('%s changed orders in %s after being ready: no longer ready', power_name, phase)
     game.error = []
     game.clear_orders(power_name)
     game.set_orders(power_name, orders)
@@ -347,9 +356,10 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
         game.error = []
         return errors
     meta['submitted'][power_name] = now
-    meta['ready'][power_name] = bool(ready)
+    ready = bool(ready)
+    meta['ready'][power_name] = ready
     LOGGER.info('Orders set by %s in %s: %s (was %s) ready=%s', power_name, phase,
-                game.get_orders(power_name), previous, bool(ready))
+                game.get_orders(power_name), previous, ready)
     return []
 
 
