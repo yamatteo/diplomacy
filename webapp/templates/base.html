@@ -37,6 +37,20 @@
   .result { color: #9a6700; }
   .sea { font-style: italic; }   /* sea provinces, as on the map */
   label { display: block; margin: .5rem 0; }
+  .clickable-unit { cursor: pointer; }
+  #order-dialog { border: 1px solid var(--line); border-radius: 8px; padding: 0; color: var(--ink);
+                  width: min(32rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); }
+  #order-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+  .od-body { padding: 1rem; }
+  .od-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .od-head h2 { margin: 0; }
+  .od-close { border: none; font-size: 1.1rem; padding: .2rem .5rem; }
+  .od-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0; }
+  .od-tab[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .od-order { display: block; width: 100%; text-align: left; margin: .3rem 0; }
+  .od-order.current, .od-direct.current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  #od-list h3 { font-size: .95rem; margin: .8rem 0 .2rem; color: var(--muted); }
+  .od-foot { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: 0; }
   code { background: #eaeef2; padding: .05rem .3rem; border-radius: 4px; font-size: .92em; white-space: nowrap; }
   .examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
   .example { border: 1px solid var(--line); border-radius: 8px; padding: .8rem; }

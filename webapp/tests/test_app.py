@@ -119,8 +119,10 @@ def test_orders_form_lists_only_own_units(app):
     assert 'name="order_PAR"' in page and 'name="order_BRE"' in page and 'name="order_MAR"' in page
     assert 'name="order_BER"' not in page                       # a German unit
     assert '<option value="A PAR - BUR"' in page
+    assert 'id="order-dialog"' in page and 'name="order_PAR" data-power="france"' in page   # click-a-unit dialog
     carla = Browser(app, 'carla')
-    assert 'Your orders' not in carla.text('/')                 # spectator
+    carla_page = carla.text('/')
+    assert 'Your orders' not in carla_page and 'id="order-dialog"' not in carla_page   # spectator
 
 
 def test_orders_are_saved_secret_and_editable(app):

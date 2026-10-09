@@ -186,6 +186,7 @@ def index():
             'svg': Markup(gameplay.render_current(game, orders_of=my_powers)),
             'my_powers': my_powers,
             'choices': choices,
+            'seas': sorted(gameplay.sea_locations(game.map_name)),
             'my_ready': bool(active) and all(meta['ready'].get(power) for power in active),
             'my_submitted': any(power in meta['submitted'] for power in active),
             'last_phase': history[-1].name if history else None,

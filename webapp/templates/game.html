@@ -24,8 +24,9 @@
     {% else %}You have not submitted orders for this phase yet.{% endif %}
     Other players cannot see your orders until the phase is processed; you can change them until then.
     <a href="{{ url_for('game.help_page') }}#orders">How orders work</a>.
+    Tip: click (or tap) one of your units on the map to choose its order.
   </p>
-  <form method="post" action="{{ url_for('game.orders') }}">
+  <form method="post" action="{{ url_for('game.orders') }}" id="orders-form">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
     <input type="hidden" name="phase" value="{{ phase }}">
     {% for entry in choices %}
@@ -34,7 +35,7 @@
       <div class="orders-grid">
         {% for item in entry.choices['items'] %}
           <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label|seas }}</strong></label>
-          <select id="order_{{ item.loc }}" name="order_{{ item.loc }}">
+          <select id="order_{{ item.loc }}" name="order_{{ item.loc }}" data-power="{{ entry.power|lower }}">
             <option value="">— {{ entry.choices.default }} —</option>
             {% for group, group_orders in item.groups %}
               <optgroup label="{{ group }}">
@@ -52,6 +53,153 @@
     <button class="primary">Save orders</button>
   </form>
 </div>
+
+{# Clicking one of your units on the map opens this dialog. It is built from that unit's <select> above, so it offers
+   exactly the same orders, and choosing one just sets the <select>: the form is still what gets submitted. #}
+<dialog id="order-dialog" aria-labelledby="od-title"><div class="od-body">
+  <div class="od-head">
+    <h2 id="od-title"></h2>
+    <button type="button" class="od-close" aria-label="Close">✕</button>
+  </div>
+  <p class="muted" id="od-current"></p>
+  <div class="od-tabs" id="od-tabs"></div>
+  <div id="od-list"></div>
+  <p class="muted od-foot"><span>Orders are sent when you press <em>Save orders</em>.</span>
+    <button type="button" class="primary" id="od-save">Save orders</button></p>
+</div></dialog>
+<script>
+(function () {
+  var SEAS = new Set({{ seas|tojson }});
+  var dialog = document.getElementById('order-dialog');
+  var form = document.getElementById('orders-form');
+  var tabsBox = document.getElementById('od-tabs'), listBox = document.getElementById('od-list');
+  var select = null;
+
+  // Order text with sea provinces in italics, as on the map. Built with text nodes: no HTML injection.
+  function orderNode(text) {
+    var span = document.createElement('span');
+    text.split(' ').forEach(function (word, i) {
+      if (i) span.appendChild(document.createTextNode(' '));
+      if (SEAS.has(word)) {
+        var sea = document.createElement('span');
+        sea.className = 'sea';
+        sea.textContent = word;
+        span.appendChild(sea);
+      } else {
+        span.appendChild(document.createTextNode(word));
+      }
+    });
+    return span;
+  }
+
+  function button(className, content, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = className;
+    b.appendChild(content);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function choose(value) {
+    select.value = value;
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+    dialog.close();
+  }
+
+  // Tabs: Move (with "via convoy" as a second section), Support, Convoy, Retreat...; Hold and Disband are a
+  // single order each, so they are plain buttons that choose directly.
+  function groupsOf(sel) {
+    var tabs = [], direct = [];
+    Array.prototype.forEach.call(sel.querySelectorAll('optgroup'), function (group) {
+      var orders = Array.prototype.map.call(group.querySelectorAll('option'), function (o) { return o.value; });
+      var name = group.label;
+      if ((name === 'Hold' || name === 'Disband') && orders.length === 1) {
+        direct.push({name: name, order: orders[0]});
+      } else if (name === 'Move via convoy') {
+        var move = tabs.find(function (t) { return t.name === 'Move'; });
+        if (!move) { move = {name: 'Move', sections: []}; tabs.push(move); }
+        move.sections.push({title: 'Via convoy', orders: orders});
+      } else {
+        var tab = tabs.find(function (t) { return t.name === name; });
+        if (!tab) { tab = {name: name, sections: []}; tabs.push(tab); }
+        tab.sections.unshift({title: '', orders: orders});
+      }
+    });
+    return {tabs: tabs, direct: direct};
+  }
+
+  function showTab(tab, unit) {
+    Array.prototype.forEach.call(tabsBox.querySelectorAll('.od-tab'), function (b) {
+      b.setAttribute('aria-pressed', b.dataset.tab === tab.name ? 'true' : 'false');
+    });
+    listBox.textContent = '';
+    tab.sections.forEach(function (section) {
+      if (section.title) {
+        var h = document.createElement('h3');
+        h.textContent = section.title;
+        listBox.appendChild(h);
+      }
+      section.orders.forEach(function (order) {
+        // The unit is in the title: list "- BUR", "S A MAR - BUR" instead of repeating "A PAR".
+        var shown = order.indexOf(unit + ' ') === 0 ? order.slice(unit.length + 1) : order;
+        var b = button('od-order', orderNode(shown), function () { choose(order); });
+        if (order === select.value) b.classList.add('current');
+        listBox.appendChild(b);
+      });
+    });
+  }
+
+  function open(sel, unit) {
+    select = sel;
+    var title = document.getElementById('od-title');
+    title.textContent = '';
+    title.appendChild(orderNode(unit));
+    var current = document.getElementById('od-current');
+    current.textContent = 'Current order: ';
+    current.appendChild(sel.value ? orderNode(sel.value) : document.createTextNode(sel.options[0].text));
+    var groups = groupsOf(sel);
+    tabsBox.textContent = '';
+    listBox.textContent = '';
+    groups.direct.forEach(function (d) {
+      // No order yet means the default ("— Hold —" or "— Disband —"): show that button as the current one.
+      var isCurrent = d.order === sel.value || (!sel.value && sel.options[0].text.indexOf(d.name) >= 0);
+      tabsBox.appendChild(button('od-direct' + (isCurrent ? ' current' : ''),
+                                 document.createTextNode(d.name), function () { choose(d.order); }));
+    });
+    groups.tabs.forEach(function (tab) {
+      var b = button('od-tab', document.createTextNode(tab.name), function () { showTab(tab, unit); });
+      b.dataset.tab = tab.name;
+      tabsBox.appendChild(b);
+    });
+    // Open the tab of the current order, or the only tab there is; otherwise let the user pick.
+    var currentTab = groups.tabs.find(function (t) {
+      return t.sections.some(function (s) { return s.orders.indexOf(sel.value) >= 0; });
+    });
+    if (currentTab || groups.tabs.length === 1) showTab(currentTab || groups.tabs[0], unit);
+    dialog.showModal();
+  }
+
+  // Your units on the map: <use id="unit_PAR" class="unitfrance"> (or dislodged_unit_PAR in retreat phases),
+  // clickable when the orders form has a <select> for that location and power.
+  var units = [];
+  document.querySelectorAll('.map use[id^="unit_"], .map use[id^="dislodged_unit_"]').forEach(function (use) {
+    var loc = use.id.replace(/^(dislodged_)?unit_/, '');
+    var sel = document.getElementById('order_' + loc.slice(0, 3));
+    if (!sel || ('unit' + sel.dataset.power) !== use.getAttribute('class')) return;
+    var type = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+    use.classList.add('clickable-unit');
+    use.addEventListener('click', function () {
+      open(sel, (type.indexOf('Fleet') >= 0 ? 'F ' : 'A ') + loc);
+    });
+    units.push(use);
+  });
+
+  dialog.querySelector('.od-close').addEventListener('click', function () { dialog.close(); });
+  dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.close(); });  // backdrop
+  document.getElementById('od-save').addEventListener('click', function () { dialog.close(); form.requestSubmit(); });
+})();
+</script>
 {% elif my_powers and not done %}
 <div class="card muted">You have nothing to order in this phase.</div>
 {% endif %}
