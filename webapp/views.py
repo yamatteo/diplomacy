@@ -19,8 +19,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay, tutorial, webpush
-from webapp.notify import describe_device, device_id
+from webapp import gameplay, tutorial
 from webapp.users import assign_powers, check_login, load_users
 
 LOGGER = logging.getLogger(__name__)
@@ -459,7 +458,9 @@ def manifest():
 
 
 def notifier_or_404():
-    """ The app's Notifier; 404 if push notifications could not be set up (the reason is in the startup log). """
+    """ The app's Notifier; 404 if push notifications could not be set up (the reason is in the startup log).
+        The views below import webapp.notify / webapp.webpush only after this check: they need `cryptography`,
+        and without it the app must still run (without notifications) instead of failing to start. """
     notifier = current_app.config['NOTIFIER']
     if not notifier:
         LOGGER.warning('%s requested but push notifications are disabled (see startup log)', request.path)
@@ -491,6 +492,7 @@ def notifications():
     notifier = current_app.config['NOTIFIER']
     devices = []
     for entry in notifier.store.for_users([g.user.name]) if notifier else []:
+        from webapp.notify import describe_device   # pylint: disable=import-outside-toplevel (see notifier_or_404)
         device = describe_device(entry)
         error = device['last_error']
         devices.append(dict(device, label=device_label(device['agent']),
@@ -508,6 +510,8 @@ def notifications_subscribe():
     """ Stores this browser's push subscription (sent by the notifications page's script, and re-sent by every
         page once per browser session so that a renewed subscription is picked up). JSON reply. """
     notifier = notifier_or_404()
+    from webapp import webpush                      # pylint: disable=import-outside-toplevel (see notifier_or_404)
+    from webapp.notify import device_id             # pylint: disable=import-outside-toplevel
     try:
         subscription = json.loads(request.form.get('subscription', ''))
     except ValueError:
@@ -530,6 +534,7 @@ def notifications_remove():
     """ Forgets one of the user's devices: by id (the devices table) or by endpoint (the page's script, when
         notifications are disabled on this device; JSON reply). """
     notifier = notifier_or_404()
+    from webapp.notify import device_id             # pylint: disable=import-outside-toplevel (see notifier_or_404)
     endpoint = request.form.get('endpoint', '')
     device = device_id(endpoint) if endpoint else request.form.get('device', '')
     removed = notifier.store.remove(g.user.name, device)

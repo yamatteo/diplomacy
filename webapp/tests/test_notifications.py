@@ -1,5 +1,8 @@
 """ Push notifications through the web app: subscribing, test notifications, removing devices, diagnostics. """
 import json
+import subprocess
+import sys
+import textwrap
 import time
 
 import http_ece
@@ -224,3 +227,30 @@ def test_cron_tick_sends_reminders_and_processes_passed_deadlines(app):
     set_deadline(app, -1)
     assert tick.get('/cron/tick?token=cron-secret').get_json()['phase'] == 'F1901M'
     assert [note['title'] for _, note in payloads(service, keys)[1:]] == ['Diplomacy: Fall 1901, Movement'] * 2
+
+
+def test_app_runs_without_cryptography(tmp_path):
+    """ If cryptography is missing (forgotten `uv sync`, failed install) the game must still work, just without
+        notifications. Runs in a fresh interpreter: this one has already imported it. """
+    (tmp_path / 'users.txt').write_text('anna:pw-anna:FRANCE:admin\n')
+    script = textwrap.dedent("""
+        import sys
+        sys.modules['cryptography'] = None      # makes any import of it fail
+        from webapp import create_app
+        from webapp.tests.test_app import Browser
+        app = create_app()
+        assert app.config['NOTIFIER'] is None
+        anna = Browser(app, 'anna')
+        assert anna.post('/admin/new-game', confirm='yes').status_code == 302
+        assert 'Spring 1901, Movement' in anna.text('/')
+        assert 'not available on this server' in anna.text('/notifications')
+        assert anna.post('/notifications/subscribe', subscription='{}').status_code == 404
+        assert anna.post('/admin/process').status_code == 302
+        assert 'Fall 1901, Movement' in anna.text('/')
+        print('OK')
+    """)
+    result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=120,
+                            env={'DIPLOMACY_DATA_DIR': str(tmp_path), 'PATH': ''})
+    assert result.stdout.strip().endswith('OK'), result.stderr[-3000:]
+    log = (tmp_path / 'logs' / 'app.log').read_text()
+    assert 'Push notifications DISABLED' in log
