@@ -40,15 +40,23 @@ class Browser:
         return re.search(r'name="csrf" value="([^"]+)"', page).group(1)
 
     def get(self, path):
-        return self.client.get(path)
+        return self.finish(self.client.get(path))
 
     def text(self, path):
-        response = self.client.get(path)
+        response = self.get(path)
         assert response.status_code == 200, (path, response.status_code)
         return response.get_data(as_text=True)
 
     def post(self, path, **form):
-        return self.client.post(path, data=dict(form, csrf=self.csrf()))
+        return self.finish(self.client.post(path, data=dict(form, csrf=self.csrf())))
+
+    @staticmethod
+    def finish(response):
+        """ Closes the response like a WSGI server does once it is sent, which runs `call_on_close` callbacks
+            (push notifications are delivered there). The test client leaves that to the caller. """
+        response.get_data()
+        response.close()
+        return response
 
 
 def map_of(page):

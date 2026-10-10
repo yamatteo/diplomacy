@@ -92,3 +92,65 @@ def test_debug_info_shows_devices_without_endpoints(app):
     assert subscription['endpoint'] not in text and subscription['keys']['auth'] not in text
     log = open(app.config['LOG_FILE'], encoding='utf-8').read()
     assert subscription['endpoint'] not in log
+
+
+def payloads(service, keys):
+    """ Decrypted notifications received by the fake push service, as (endpoint, data). """
+    return [(request.full_url, json.loads(http_ece.decrypt(request.data, private_key=keys[request.full_url][0],
+                                                           auth_secret=keys[request.full_url][1],
+                                                           version='aes128gcm')))
+            for request in service.requests]
+
+
+def subscribe_all(app, *names):
+    """ Subscribes one device for each user. :return: {endpoint: (private key, auth)} """
+    keys = {}
+    for name in names:
+        subscription, private_key, auth = browser_subscription('https://fcm.googleapis.com/fcm/send/' + name)
+        subscribe(Browser(app, name), subscription)
+        keys[subscription['endpoint']] = (private_key, auth)
+    return keys
+
+
+def test_players_are_notified_when_a_new_phase_starts(app):
+    service = FakePushService()
+    app.config['NOTIFIER'].opener = service
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes')
+    keys = subscribe_all(app, 'anna', 'bruno', 'carla')
+    anna.post('/orders', phase='S1901M', order_PAR='A PAR - BUR', ready='yes')
+    assert service.requests == []
+    Browser(app, 'bruno').post('/orders', phase='S1901M', order_MUN='A MUN - BUR', ready='yes')   # processes
+    received = dict(payloads(service, keys))
+    assert sorted(received) == ['https://fcm.googleapis.com/fcm/send/anna', 'https://fcm.googleapis.com/fcm/send/bruno']
+    anna_note = received['https://fcm.googleapis.com/fcm/send/anna']
+    assert anna_note['title'] == 'Diplomacy: Fall 1901, Movement' and anna_note['tag'] == 'phase'
+    assert anna_note['body'].startswith('Orders needed for France. Deadline: ')
+    assert received['https://fcm.googleapis.com/fcm/send/bruno']['body'].startswith('Orders needed for Germany.')
+    assert all(request.get_header('Topic') == 'phase' for request in service.requests)
+    assert 47 * 3600 < int(service.requests[0].get_header('Ttl')) <= 48 * 3600
+    assert 'A PAR' not in json.dumps(list(received.values()))       # never any orders
+
+
+def test_game_over_is_notified_to_all_players(app):
+    service = FakePushService()
+    app.config['NOTIFIER'].opener = service
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes')
+    keys = subscribe_all(app, 'anna', 'bruno')
+    anna.post('/admin/draw', confirm='yes')
+    notes = [data for _, data in payloads(service, keys)]
+    assert len(notes) == 2 and all(note['title'] == 'Diplomacy: the game is over' for note in notes)
+    assert notes[0]['body'].startswith('Draw between')
+
+
+def test_failing_push_service_does_not_break_processing(app):
+    app.config['NOTIFIER'].opener = FakePushService(OSError('proxy says no'))
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes')
+    subscribe_all(app, 'anna')
+    response = anna.post('/admin/process')
+    assert response.status_code == 302
+    assert 'Fall 1901' in anna.text('/')
+    log = open(app.config['LOG_FILE'], encoding='utf-8').read()
+    assert 'proxy says no' in log and 'Queued new phase notifications for F1901M' in log

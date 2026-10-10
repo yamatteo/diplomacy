@@ -80,14 +80,76 @@ def open_game():
         game, meta = store.load()
         if game:
             g.map_name = game.map_name
-            announce_processed(gameplay.process_if_due(game, meta, g.users, store, time.time()))
+            announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, time.time()))
         yield game, meta, store
 
 
-def announce_processed(processed):
-    """ Tells the user that phases were just processed. """
+def announce_processed(game, meta, processed):
+    """ Tells the user that phases were just processed, and the players by push notification. """
     if processed:
         flash('Processed: %s.' % ', '.join(processed), 'info')
+        notify_new_phase(game, meta, processed)
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Push notifications about the game. They are queued during the request and sent once the response is out (see
+# `deliver_notifications`), so they never hold the game lock nor slow down the page.
+# ----------------------------------------------------------------------------------------------------------------
+MAX_PUSH_TTL = 28 * 86400           # push services keep messages at most about 4 weeks
+
+
+def queue_notification(users, data, topic=None, ttl=None):
+    """ Schedules a push notification to `users` (usernames) for after the response. """
+    if current_app.config['NOTIFIER'] and users:
+        g.setdefault('pending_push', []).append((sorted(users), data, topic, ttl or 7 * 86400))
+
+
+def notify_new_phase(game, meta, processed):
+    """ Tells each player whose powers have orders to give that the current phase started (or everybody that
+        the game is over). Called after `processed` phases were processed. """
+    now = time.time()
+    phase = game.get_current_phase()
+    players = gameplay.players_by_power(game, meta, g.users)
+    url = url_for('game.index')
+    if game.is_game_done:
+        outcome = game.outcome[1:] if game.outcome and len(game.outcome) > 1 else []
+        body = ('%s: %s.' % ('Winner' if len(outcome) == 1 else 'Draw between', ', '.join(power.title()
+                                                                                       for power in outcome))
+                if outcome else 'See the final position.')
+        queue_notification(set(players.values()), {'title': 'Diplomacy: the game is over', 'body': body,
+                                                   'url': url, 'tag': 'phase'}, topic='phase')
+        LOGGER.info('Queued game over notification after %s to %s', processed, sorted(set(players.values())))
+        return
+    by_user = {}
+    for power in gameplay.active_powers(game, meta, g.users):
+        by_user.setdefault(players[power], []).append(power.title())
+    deadline = (' Deadline: %s.' % format_time(meta['deadline'])) if meta['deadline'] else ''
+    ttl = min(MAX_PUSH_TTL, max(60, int(meta['deadline'] - now))) if meta['deadline'] else None
+    for user, powers in sorted(by_user.items()):
+        queue_notification([user], {'title': 'Diplomacy: %s' % phase_title(phase),
+                                    'body': 'Orders needed for %s.%s' % (', '.join(powers), deadline),
+                                    'url': url, 'tag': 'phase'}, topic='phase', ttl=ttl)
+    LOGGER.info('Queued new phase notifications for %s (after %s) to %s', phase, processed, by_user)
+
+
+@bp.after_app_request
+def deliver_notifications(response):
+    """ Sends the queued push notifications once the response has been sent to the browser. """
+    pending = g.pop('pending_push', None)
+    if pending:
+        app = current_app._get_current_object()     # pylint: disable=protected-access
+        request_id, site_url = g.get('request_id', '-'), push_site_url()
+
+        def deliver():
+            with app.app_context():
+                g.request_id = request_id           # so these log lines can be matched to the request
+                for users, data, topic, ttl in pending:
+                    try:
+                        app.config['NOTIFIER'].send(users, data, site_url, topic=topic, ttl=ttl)
+                    except Exception:   # pylint: disable=broad-except
+                        LOGGER.exception('Delivering notification %r to %s failed', data.get('title'), users)
+        response.call_on_close(deliver)
+    return response
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -263,7 +325,7 @@ def orders():
         if autosave:
             processed = gameplay.process_if_due(game, meta, g.users, store, now)   # only a passed deadline can
             if processed:
-                announce_processed(processed)
+                announce_processed(game, meta, processed)
                 return jsonify(ok=True, reload=True)
             state = my_orders_state(game, meta, powers)
             unready = [power for power in was_ready if not meta['ready'].get(power)]
@@ -274,7 +336,7 @@ def orders():
                            status=render_template('_status_table.html', **state))
         flash('Orders saved for %s%s.' % (phase, ' and marked ready' if ready else
                                           ' (not marked ready: the phase waits for you until the deadline)'), 'ok')
-        announce_processed(gameplay.process_if_due(game, meta, g.users, store, now))
+        announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, now))
     return redirect(url_for('game.index'))
 
 
@@ -550,8 +612,7 @@ def admin_process():
         else:
             phase = game.get_current_phase()
             gameplay.process_phase(game, meta, store, now, 'forced by admin %s' % g.user.name)
-            flash('Processed %s.' % phase, 'ok')
-            announce_processed(gameplay.process_if_due(game, meta, g.users, store, now))
+            announce_processed(game, meta, [phase] + gameplay.process_if_due(game, meta, g.users, store, now))
     return redirect(url_for('game.admin'))
 
 
@@ -620,5 +681,6 @@ def admin_draw():
             meta['deadline'] = None
             store.save(game, meta)
             LOGGER.info('Admin %r ended the game as a draw: outcome=%s', g.user.name, game.outcome)
+            notify_new_phase(game, meta, ['draw by admin'])
             flash('Game ended as a draw.', 'ok')
     return redirect(url_for('game.index'))
