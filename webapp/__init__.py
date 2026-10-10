@@ -6,9 +6,12 @@
     - DIPLOMACY_DEBUG_TOKEN: enables the /debug/* endpoints; pass it as ?token=... or X-Debug-Token header.
     - DIPLOMACY_LOG_LEVEL: root log level (default: DEBUG).
     - DIPLOMACY_TIMEZONE: time zone used to display deadlines (default: Europe/Rome).
+    - DIPLOMACY_PUSH_CONTACT: contact sent to push services with each notification, e.g. mailto:you@example.com
+      (default: the site's URL).
 
     Files in the data dir: users.txt (players, see webapp/users.py), game.json (+ backups/, archive/),
-    secret_key (signs session cookies), logs/app.log.
+    secret_key (signs session cookies), logs/app.log, vapid_private.pem and subscriptions.json (push
+    notifications, see webapp/notify.py).
 """
 import hmac
 import logging
@@ -98,6 +101,13 @@ def game_diagnostics(app):
         result['game'] = gameplay.game_summary(game, meta, users) if game else None
     except Exception:   # pylint: disable=broad-except
         result['error'] = traceback.format_exc()
+    try:
+        notifier = app.config['NOTIFIER']
+        result['push'] = {'enabled': bool(notifier), 'contact': app.config['PUSH_CONTACT'],
+                          'public_key': notifier.public_key if notifier else None,
+                          'devices': notifier.store.summary() if notifier else {}}
+    except Exception:   # pylint: disable=broad-except
+        result['push_error'] = traceback.format_exc()
     return result
 
 
@@ -111,6 +121,7 @@ def create_app():
         'DEBUG_TOKEN': os.environ.get('DIPLOMACY_DEBUG_TOKEN', ''),
         'USERS_FILE': os.path.join(data_dir, 'users.txt'),
         'TIMEZONE': os.environ.get('DIPLOMACY_TIMEZONE', 'Europe/Rome'),
+        'PUSH_CONTACT': os.environ.get('DIPLOMACY_PUSH_CONTACT', ''),
     }
     setup_logging(config['LOG_FILE'], os.environ.get('DIPLOMACY_LOG_LEVEL', 'DEBUG').upper())
 
@@ -127,6 +138,16 @@ def create_app():
     app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(days=90), SESSION_COOKIE_SAMESITE='Lax',
                       SESSION_COOKIE_HTTPONLY=True)
     ensure_users_file(config['USERS_FILE'])
+    try:
+        from webapp.notify import Notifier  # pylint: disable=import-outside-toplevel
+        app.config['NOTIFIER'] = Notifier(data_dir, config['PUSH_CONTACT'] or None)
+    except Exception:   # pylint: disable=broad-except
+        # E.g. cryptography missing from the venv: the game still works, without notifications.
+        LOGGER.exception('Push notifications DISABLED: cannot set up the notifier')
+        app.config['NOTIFIER'] = None
+    if config['PUSH_CONTACT'] and not config['PUSH_CONTACT'].startswith(('mailto:', 'https://')):
+        LOGGER.warning('DIPLOMACY_PUSH_CONTACT should start with mailto: or https:// (got %r): push services may '
+                       'reject notifications', config['PUSH_CONTACT'])
 
     info = environment_info(config)
     LOGGER.info('=== App starting ===')

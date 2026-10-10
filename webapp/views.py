@@ -6,7 +6,10 @@
 import contextlib
 import functools
 import hmac
+import json
 import logging
+import os
+import re
 import secrets
 import time
 from datetime import datetime, timezone
@@ -16,7 +19,8 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay, tutorial
+from webapp import gameplay, tutorial, webpush
+from webapp.notify import describe_device, device_id
 from webapp.users import assign_powers, check_login, load_users
 
 LOGGER = logging.getLogger(__name__)
@@ -328,6 +332,132 @@ def rules_pdf():
     response.cache_control.public = False
     response.cache_control.private = True       # behind the login: browsers may cache it, shared proxies not
     return response
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Notifications (Web Push) and installing the site as an app
+# ----------------------------------------------------------------------------------------------------------------
+@bp.route('/sw.js')
+def service_worker():
+    """ The service worker that shows notifications. Served from the root so its scope is the whole site. """
+    response = send_from_directory(os.path.join(current_app.root_path, 'static'), 'sw.js',
+                                   mimetype='text/javascript', max_age=0)
+    response.headers['Cache-Control'] = 'no-cache'     # browsers must pick up a new version on the next visit
+    return response
+
+
+@bp.route('/manifest.webmanifest')
+def manifest():
+    """ Lets players add the site to their home screen (on iPhone that is required for notifications). """
+    icons = [{'src': url_for('static', filename='icon-%d.png' % size), 'sizes': '%dx%d' % (size, size),
+              'type': 'image/png', 'purpose': 'any maskable'} for size in (192, 512)]
+    data = {'name': 'Diplomacy', 'short_name': 'Diplomacy', 'start_url': url_for('game.index'), 'scope': '/',
+            'display': 'standalone', 'background_color': '#f6f8fa', 'theme_color': '#0b5cad', 'icons': icons}
+    return Response(json.dumps(data), mimetype='application/manifest+json')
+
+
+def notifier_or_404():
+    """ The app's Notifier; 404 if push notifications could not be set up (the reason is in the startup log). """
+    notifier = current_app.config['NOTIFIER']
+    if not notifier:
+        LOGGER.warning('%s requested but push notifications are disabled (see startup log)', request.path)
+        abort(404)
+    return notifier
+
+
+def push_site_url():
+    """ The site's https URL, the VAPID subject when DIPLOMACY_PUSH_CONTACT is unset. Built from the Host
+        header because PythonAnywhere terminates HTTPS in front of the app (request.url_root says http). """
+    return 'https://%s/' % request.host
+
+
+def device_label(agent):
+    """ 'Mozilla/5.0 (Linux; Android 14; ...) Chrome/129...' -> 'Chrome on Android'. Rough, for humans only. """
+    system = next((name for pattern, name in [('iPhone|iPad|iPod', 'iPhone/iPad'), ('Android', 'Android'),
+                                              ('Windows', 'Windows'), ('Mac OS X|Macintosh', 'Mac'),
+                                              ('Linux|X11', 'Linux')] if re.search(pattern, agent)), '')
+    browser = next((name for pattern, name in [('Edg/', 'Edge'), ('Firefox/|FxiOS/', 'Firefox'),
+                                               ('Chrome/|CriOS/', 'Chrome'), ('Safari/', 'Safari')]
+                    if re.search(pattern, agent)), 'Browser')
+    return '%s on %s' % (browser, system) if system else browser
+
+
+@bp.route('/notifications')
+@login_required
+def notifications():
+    """ Enable notifications on this device, send a test, see and remove the user's devices. """
+    notifier = current_app.config['NOTIFIER']
+    devices = []
+    for entry in notifier.store.for_users([g.user.name]) if notifier else []:
+        device = describe_device(entry)
+        error = device['last_error']
+        devices.append(dict(device, label=device_label(device['agent']),
+                            created=format_time(device['created_at']) if device['created_at'] else '',
+                            last_ok=format_time(device['last_ok']) if device['last_ok'] else 'never',
+                            error='%s (%s)' % (format_time(error['at']), error['status'] or 'unreachable')
+                                  if error else ''))
+    return render_template('notifications.html', enabled=bool(notifier),
+                           public_key=notifier.public_key if notifier else '', devices=devices)
+
+
+@bp.route('/notifications/subscribe', methods=['POST'])
+@login_required
+def notifications_subscribe():
+    """ Stores this browser's push subscription (sent by the notifications page's script, and re-sent by every
+        page once per browser session so that a renewed subscription is picked up). JSON reply. """
+    notifier = notifier_or_404()
+    try:
+        subscription = json.loads(request.form.get('subscription', ''))
+    except ValueError:
+        subscription = None
+    error = webpush.check_subscription(subscription)
+    if error:
+        LOGGER.warning('Rejected push subscription from %r: %s', g.user.name, error)
+        return jsonify(ok=False, error='This browser sent an unusable subscription: %s.' % error), 400
+    agent = request.headers.get('User-Agent', '')
+    is_new = notifier.store.add(g.user.name, subscription, agent, time.time())
+    LOGGER.log(logging.INFO if is_new else logging.DEBUG, 'Push subscription %s %s for %r (%s)',
+               webpush.describe_endpoint(subscription['endpoint']), 'added' if is_new else 'refreshed', g.user.name,
+               device_label(agent))
+    return jsonify(ok=True, new=is_new, device=device_id(subscription['endpoint']))
+
+
+@bp.route('/notifications/remove', methods=['POST'])
+@login_required
+def notifications_remove():
+    """ Forgets one of the user's devices: by id (the devices table) or by endpoint (the page's script, when
+        notifications are disabled on this device; JSON reply). """
+    notifier = notifier_or_404()
+    endpoint = request.form.get('endpoint', '')
+    device = device_id(endpoint) if endpoint else request.form.get('device', '')
+    removed = notifier.store.remove(g.user.name, device)
+    LOGGER.info('Push device %s of %r removed by the user: %s', device, g.user.name, removed)
+    if endpoint:
+        return jsonify(ok=True, removed=removed)
+    flash('Device removed: it will not get notifications any more.' if removed else 'Device not found.',
+          'ok' if removed else 'error')
+    return redirect(url_for('game.notifications'))
+
+
+@bp.route('/notifications/test', methods=['POST'])
+@login_required
+def notifications_test():
+    """ Sends a test notification to all the user's devices right away and reports the outcome. """
+    notifier = notifier_or_404()
+    results = notifier.send([g.user.name], {'title': 'Diplomacy', 'body': 'Test: notifications work on this device.',
+                                            'url': url_for('game.notifications'), 'tag': 'test'},
+                            push_site_url(), ttl=600)[g.user.name]
+    if not results:
+        flash('You have not enabled notifications on any device yet.', 'error')
+    elif all(result.ok for result in results):
+        flash('Test notification sent to %d device(s). It should appear within a few seconds.' % len(results), 'ok')
+    else:
+        failed = [result for result in results if not result.ok]
+        flash('Test notification: %d of %d device(s) failed (%s). Devices that no longer exist were removed; '
+              'if the others keep failing, tell the admin.' % (
+                  len(failed), len(results), ', '.join(str(result.status or 'unreachable') for result in failed)),
+              'error')
+    return redirect(url_for('game.notifications'))
 
 
 # ----------------------------------------------------------------------------------------------------------------

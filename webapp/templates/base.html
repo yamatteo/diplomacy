@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Diplomacy{% endblock %}</title>
+<link rel="manifest" href="{{ url_for('game.manifest') }}">
+<link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+<meta name="theme-color" content="#0b5cad">
 <style>
   :root { --ink: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #f6f8fa; --accent: #0b5cad; }
   * { box-sizing: border-box; }
@@ -76,6 +80,7 @@
     {% if g.user %}
       <a href="{{ url_for('game.index') }}">Game</a>
       <a href="{{ url_for('game.history') }}">History</a>
+      <a href="{{ url_for('game.notifications') }}">Notifications</a>
       {% if g.user.is_admin %}<a href="{{ url_for('game.admin') }}">Admin</a>{% endif %}
     {% endif %}
     <a href="{{ url_for('game.help_page') }}">Help</a>
@@ -94,5 +99,26 @@
   {% endfor %}
   {% block content %}{% endblock %}
 </main>
+{% if g.user and config.NOTIFIER %}
+<script>
+// Browsers may renew a push subscription on their own: re-send it once per browser session so the server keeps
+// the current one. Does nothing on devices where notifications were never enabled.
+(function () {
+  try {
+    if (!('serviceWorker' in navigator) || sessionStorage.getItem('push-synced') === {{ g.user.name|tojson }}) { return; }
+  } catch (error) { return; }
+  navigator.serviceWorker.getRegistration('/').then(function (registration) {
+    return registration && registration.pushManager.getSubscription();
+  }).then(function (subscription) {
+    if (!subscription) { return; }
+    var body = new URLSearchParams({subscription: JSON.stringify(subscription), csrf: {{ session.csrf|tojson }}});
+    return fetch({{ url_for('game.notifications_subscribe')|tojson }}, {method: 'POST', body: body, credentials: 'same-origin'})
+      .then(function (response) {
+        if (response.ok) { try { sessionStorage.setItem('push-synced', {{ g.user.name|tojson }}); } catch (error) {} }
+      });
+  }).catch(function () {});
+})();
+</script>
+{% endif %}
 </body>
 </html>

@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Notifications · Diplomacy{% endblock %}
+{% block content %}
+<h1>Notifications</h1>
+{% if not enabled %}
+  <div class="flash error">Notifications are not available on this server right now. Tell the admin.</div>
+{% else %}
+<div class="card">
+  <p style="margin-top: 0">
+    Get a notification on your phone (or computer) when a new phase starts and you have orders to give,
+    and a reminder before the deadline if you have not pressed <em>I'm done</em> yet.
+    Notifications never contain anybody's orders.
+  </p>
+  <h2>This device</h2>
+  <p id="push-state" role="status">Checking…</p>
+  <noscript><p class="error-text">Notifications need JavaScript.</p></noscript>
+  <div id="push-ios" hidden>
+    <p><strong>On iPhone and iPad</strong> notifications only work once the site is on your home screen:</p>
+    <ol>
+      <li>In Safari, tap the <em>Share</em> button and choose <em>Add to Home Screen</em>.</li>
+      <li>Open Diplomacy from the new icon on your home screen and log in.</li>
+      <li>Come back to this page (it is in the menu at the top) and tap <em>Enable notifications</em>.</li>
+    </ol>
+    <p class="muted">This needs iOS 16.4 or later.</p>
+  </div>
+  <p>
+    <button type="button" class="primary" id="push-enable" hidden>Enable notifications</button>
+    <button type="button" id="push-disable" hidden>Disable on this device</button>
+  </p>
+  <p class="muted" id="push-denied" hidden>
+    Notifications are blocked for this site. Allow them in your browser's site settings (on Android: tap the icon
+    left of the address, then <em>Permissions</em>; on iPhone: <em>Settings → Notifications → Diplomacy</em>),
+    then reload this page.
+  </p>
+
+  <h2>Your devices</h2>
+  {% if devices %}
+    <div class="table-wrap"><table>
+      <tr><th>Device</th><th>Since</th><th>Last delivered</th><th>Last error</th><th></th></tr>
+      {% for device in devices %}
+        <tr>
+          <td>{{ device.label }} <span class="muted">({{ device.service.split('#')[0] }})</span></td>
+          <td>{{ device.created }}</td>
+          <td>{{ device.last_ok }}</td>
+          <td>{{ device.error }}</td>
+          <td>
+            <form method="post" action="{{ url_for('game.notifications_remove') }}" style="margin: 0">
+              <input type="hidden" name="csrf" value="{{ session.csrf }}">
+              <input type="hidden" name="device" value="{{ device.id }}">
+              <button>Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </table></div>
+    <form method="post" action="{{ url_for('game.notifications_test') }}">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <p><button>Send me a test notification</button></p>
+    </form>
+  {% else %}
+    <p class="muted">None yet.</p>
+  {% endif %}
+</div>
+<script>
+(function () {
+  var KEY = {{ public_key|tojson }}, CSRF = {{ session.csrf|tojson }};
+  var state = document.getElementById('push-state');
+  var enable = document.getElementById('push-enable'), disable = document.getElementById('push-disable');
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  var registration = null;
+
+  function show(text) { state.textContent = text; }
+  function post(url, fields) {
+    var body = new URLSearchParams(fields);
+    body.set('csrf', CSRF);
+    return fetch(url, {method: 'POST', body: body, credentials: 'same-origin'}).then(function (response) {
+      return response.json().catch(function () { return {ok: false, error: 'server error ' + response.status}; });
+    });
+  }
+  function keyBytes(text) {
+    var raw = atob(text.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((text.length + 3) % 4));
+    return Uint8Array.from(raw, function (c) { return c.charCodeAt(0); });
+  }
+  function refresh() {
+    return registration.pushManager.getSubscription().then(function (subscription) {
+      enable.hidden = Boolean(subscription);
+      disable.hidden = !subscription;
+      document.getElementById('push-denied').hidden = Notification.permission !== 'denied';
+      if (Notification.permission === 'denied') {
+        enable.hidden = true;
+        show('Notifications are blocked on this device.');
+      } else if (subscription) {
+        show('Notifications are enabled on this device.');
+        post('{{ url_for("game.notifications_subscribe") }}', {subscription: JSON.stringify(subscription)});
+      } else {
+        show('Notifications are not enabled on this device.');
+      }
+    });
+  }
+  function fail(error) {
+    show('Something went wrong: ' + (error && (error.message || error.error) || error) +
+         '. Reload the page and try again; if it keeps failing, tell the admin.');
+  }
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    if (ios && !standalone) {
+      show('Not enabled yet.');
+      document.getElementById('push-ios').hidden = false;
+    } else {
+      show('This browser does not support notifications. Try Chrome or Firefox (or Safari from the home screen on iPhone).');
+    }
+    return;
+  }
+  navigator.serviceWorker.register('/sw.js').then(function (reg) {
+    registration = reg;
+    return refresh();
+  }).catch(fail);
+
+  enable.addEventListener('click', function () {
+    show('Asking for permission…');
+    Notification.requestPermission().then(function (permission) {
+      if (permission !== 'granted') {
+        return refresh();
+      }
+      // An old subscription made with a different server key would make subscribe() fail: drop it first.
+      return registration.pushManager.getSubscription().then(function (old) {
+        return old ? old.unsubscribe() : null;
+      }).then(function () {
+        return registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: keyBytes(KEY)});
+      }).then(function (subscription) {
+        return post('{{ url_for("game.notifications_subscribe") }}', {subscription: JSON.stringify(subscription)});
+      }).then(function (reply) {
+        if (!reply.ok) { throw reply; }
+        window.location.reload();
+      });
+    }).catch(fail);
+  });
+
+  disable.addEventListener('click', function () {
+    registration.pushManager.getSubscription().then(function (subscription) {
+      if (!subscription) { return null; }
+      var endpoint = subscription.endpoint;
+      return subscription.unsubscribe().then(function () {
+        return post('{{ url_for("game.notifications_remove") }}', {endpoint: endpoint});
+      });
+    }).then(function () { window.location.reload(); }).catch(fail);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
