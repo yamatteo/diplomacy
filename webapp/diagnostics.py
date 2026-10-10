@@ -11,7 +11,7 @@ import sys
 import time
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PACKAGES = ['diplomacy-simple', 'flask', 'werkzeug', 'jinja2']
+PACKAGES = ['diplomacy-simple', 'flask', 'werkzeug', 'jinja2', 'cryptography']
 
 
 def git_info():

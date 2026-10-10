@@ -8,6 +8,7 @@ license = { text = "AGPL-3.0-or-later" }
 # the .venv there must be built with the same version picked on the Web tab.
 requires-python = ">=3.11"
 dependencies = [
+    "cryptography>=50.0.2",
     "flask>=3.0",
 ]
 
@@ -19,7 +20,10 @@ build-backend = "hatchling.build"
 packages = ["diplomacy", "webapp"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "http-ece>=1.2.1",
+    "pytest>=8",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["diplomacy", "webapp"]
