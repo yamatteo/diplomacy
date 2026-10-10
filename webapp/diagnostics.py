@@ -75,6 +75,8 @@ def environment_info(config):
         'data_dir_size_bytes': dir_size_bytes(config['DATA_DIR']),
         'log_file': config['LOG_FILE'],
         'debug_token_set': bool(config['DEBUG_TOKEN']),
+        'cron_token_set': bool(config.get('CRON_TOKEN')),
+        'reminder_hours': config.get('REMINDER_HOURS'),
         # Names only: values may be secrets.
         'diplomacy_env_vars': sorted(key for key in os.environ if key.startswith('DIPLOMACY_')),
     }

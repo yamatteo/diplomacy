@@ -6,6 +6,9 @@
     - DIPLOMACY_DEBUG_TOKEN: enables the /debug/* endpoints; pass it as ?token=... or X-Debug-Token header.
     - DIPLOMACY_LOG_LEVEL: root log level (default: DEBUG).
     - DIPLOMACY_TIMEZONE: time zone used to display deadlines (default: Europe/Rome).
+    - DIPLOMACY_CRON_TOKEN: enables /cron/tick?token=... for an external scheduler (see deploy/PYTHONANYWHERE.md).
+    - DIPLOMACY_REMINDER_HOURS: when to remind players who are not done, in hours before the deadline
+      (default: 12,2; empty: no reminders).
     - DIPLOMACY_PUSH_CONTACT: contact sent to push services with each notification, e.g. mailto:you@example.com
       (default: the site's URL).
 
@@ -122,8 +125,22 @@ def create_app():
         'USERS_FILE': os.path.join(data_dir, 'users.txt'),
         'TIMEZONE': os.environ.get('DIPLOMACY_TIMEZONE', 'Europe/Rome'),
         'PUSH_CONTACT': os.environ.get('DIPLOMACY_PUSH_CONTACT', ''),
+        'CRON_TOKEN': os.environ.get('DIPLOMACY_CRON_TOKEN', ''),
+        'REMINDER_HOURS': (12.0, 2.0),
     }
     setup_logging(config['LOG_FILE'], os.environ.get('DIPLOMACY_LOG_LEVEL', 'DEBUG').upper())
+
+    raw_hours = os.environ.get('DIPLOMACY_REMINDER_HOURS')
+    if raw_hours is not None:
+        try:
+            config['REMINDER_HOURS'] = tuple(sorted({float(item) for item in raw_hours.split(',') if item.strip()},
+                                                    reverse=True))
+            if any(hours <= 0 for hours in config['REMINDER_HOURS']):
+                raise ValueError('hours must be positive')
+        except ValueError as exc:
+            LOGGER.error('Bad DIPLOMACY_REMINDER_HOURS %r (%s): using the default %s', raw_hours, exc,
+                         (12.0, 2.0))
+            config['REMINDER_HOURS'] = (12.0, 2.0)
 
     try:
         ZoneInfo(config['TIMEZONE'])
@@ -155,6 +172,9 @@ def create_app():
         LOGGER.info('startup %s = %r', key, value)
     if not config['DEBUG_TOKEN']:
         LOGGER.warning('DIPLOMACY_DEBUG_TOKEN is not set: /debug/* endpoints are disabled')
+    if not config['CRON_TOKEN']:
+        LOGGER.warning('DIPLOMACY_CRON_TOKEN is not set: /cron/tick is disabled, so deadlines are only processed '
+                       'and reminders only sent when someone opens a page')
     if not info['in_virtualenv']:
         LOGGER.warning('Not running inside a virtualenv: check the virtualenv path on the Web tab')
     for key, value in game_diagnostics(app).items():

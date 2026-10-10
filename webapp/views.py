@@ -81,6 +81,7 @@ def open_game():
         if game:
             g.map_name = game.map_name
             announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, time.time()))
+            send_due_reminders(game, meta, store, time.time())
         yield game, meta, store
 
 
@@ -130,6 +131,25 @@ def notify_new_phase(game, meta, processed):
                                     'body': 'Orders needed for %s.%s' % (', '.join(powers), deadline),
                                     'url': url, 'tag': 'phase'}, topic='phase', ttl=ttl)
     LOGGER.info('Queued new phase notifications for %s (after %s) to %s', phase, processed, by_user)
+
+
+def send_due_reminders(game, meta, store, now):
+    """ Queues deadline reminders for players who are not done yet (see `gameplay.due_reminders`). """
+    if not current_app.config['NOTIFIER'] or game.is_game_done:
+        return
+    reminders = gameplay.due_reminders(game, meta, g.users, now, current_app.config['REMINDER_HOURS'])
+    if not reminders:
+        return
+    store.save(game, meta)                          # records who was reminded, so it is not sent twice
+    left = format_delta(meta['deadline'] - now)
+    for user, reminder in sorted(reminders.items()):
+        states = ['%s (%s)' % (power.title(), 'orders saved, but not marked done' if submitted else 'no orders yet')
+                  for power, submitted in reminder['powers']]
+        queue_notification([user], {'title': 'Diplomacy: %s left for %s' % (left, phase_title(meta['phase'])),
+                                    'body': 'Not done yet: %s. Deadline: %s.' % ('; '.join(states),
+                                                                                format_time(meta['deadline'])),
+                                    'url': url_for('game.index'), 'tag': 'phase'},
+                           topic='phase', ttl=max(60, int(meta['deadline'] - now)))
 
 
 @bp.after_app_request
@@ -394,6 +414,26 @@ def rules_pdf():
     response.cache_control.public = False
     response.cache_control.private = True       # behind the login: browsers may cache it, shared proxies not
     return response
+
+
+@bp.route('/cron/tick')
+def cron_tick():
+    """ Called every few minutes by an external scheduler (cron-job.org; PythonAnywhere's free tier has no
+        background processes): processes the phase if its deadline passed and sends deadline reminders, even when
+        nobody is visiting the site. Protected by DIPLOMACY_CRON_TOKEN (?token=...); 404 when unset or wrong. """
+    expected = current_app.config['CRON_TOKEN']
+    given = request.args.get('token', '')
+    if not expected or not hmac.compare_digest(given.encode(), expected.encode()):
+        LOGGER.warning('Rejected /cron/tick from %s (token %s)', g.client_ip, 'not configured' if not expected
+                       else 'wrong')
+        abort(404)
+    now = time.time()
+    with open_game() as (game, meta, _):
+        if not game:
+            return jsonify(game=None)
+        return jsonify(phase=game.get_current_phase(), done=game.is_game_done,
+                       deadline_in_s=round(meta['deadline'] - now) if meta['deadline'] else None,
+                       queued_notifications=len(g.get('pending_push') or []))
 
 
 # ----------------------------------------------------------------------------------------------------------------

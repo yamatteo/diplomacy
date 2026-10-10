@@ -11,12 +11,16 @@ import sys
 import traceback
 
 DEBUG_TOKEN = 'CHANGE-ME'   # generate with: python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+CRON_TOKEN = ''             # for cron-job.org (see deploy/PYTHONANYWHERE.md); a different random string
+PUSH_CONTACT = ''           # optional: mailto:you@example.com, told to push services in case of problems
 
 HOME = pwd.getpwuid(os.getuid()).pw_dir     # /home/<username>, detected automatically
 PROJECT_DIR = os.path.join(HOME, 'diplomacy')
 
 os.environ['DIPLOMACY_DATA_DIR'] = os.path.join(HOME, 'diplomacy-data')
 os.environ['DIPLOMACY_DEBUG_TOKEN'] = DEBUG_TOKEN
+os.environ['DIPLOMACY_CRON_TOKEN'] = CRON_TOKEN
+os.environ['DIPLOMACY_PUSH_CONTACT'] = PUSH_CONTACT
 
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)

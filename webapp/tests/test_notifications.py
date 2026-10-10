@@ -1,5 +1,6 @@
 """ Push notifications through the web app: subscribing, test notifications, removing devices, diagnostics. """
 import json
+import time
 
 import http_ece
 
@@ -154,3 +155,72 @@ def test_failing_push_service_does_not_break_processing(app):
     assert 'Fall 1901' in anna.text('/')
     log = open(app.config['LOG_FILE'], encoding='utf-8').read()
     assert 'proxy says no' in log and 'Queued new phase notifications for F1901M' in log
+
+
+def set_deadline(app, seconds_from_now, started_hours_ago=1):
+    """ Moves the current phase's deadline (and start) in game.json. """
+    path = app.config['DATA_DIR'] + '/game.json'
+    with open(path, encoding='utf-8') as file:
+        data = json.load(file)
+    data['meta']['deadline'] = time.time() + seconds_from_now
+    data['meta']['phase_started'] = time.time() - started_hours_ago * 3600
+    with open(path, 'w', encoding='utf-8') as file:
+        json.dump(data, file)
+    return data
+
+
+def test_due_reminders_once_per_threshold_and_not_for_ready_powers():
+    from webapp import gameplay
+    from webapp.users import User
+    users = {'anna': User('anna', 'x', ('FRANCE',), False), 'bruno': User('bruno', 'x', ('GERMANY',), False),
+             'carla': User('carla', 'x', ('ENGLAND',), False)}
+    game, meta = gameplay.new_game('anna', 0)
+    meta['ready']['ENGLAND'] = True
+    meta['submitted']['GERMANY'] = 1
+    deadline = meta['deadline']                         # 48 h after the start
+    assert gameplay.due_reminders(game, meta, users, deadline - 13 * 3600, (12, 2)) == {}
+    first = gameplay.due_reminders(game, meta, users, deadline - 11 * 3600, (12, 2))
+    assert first == {'anna': {'hours': 12, 'powers': [('FRANCE', False)]},
+                     'bruno': {'hours': 12, 'powers': [('GERMANY', True)]}}
+    assert gameplay.due_reminders(game, meta, users, deadline - 10 * 3600, (12, 2)) == {}
+    meta['ready']['GERMANY'] = True
+    assert gameplay.due_reminders(game, meta, users, deadline - 3600, (12, 2)) == {
+        'anna': {'hours': 2, 'powers': [('FRANCE', False)]}}
+    assert gameplay.due_reminders(game, meta, users, deadline + 1, (12, 2)) == {}         # processed, not reminded
+    # A threshold as long as the phase is skipped: no reminder right after a short phase starts.
+    gameplay.start_phase_clock(game, meta, 0)
+    meta['deadline'] = 10 * 3600
+    assert gameplay.due_reminders(game, meta, users, 60, (12, 2)) == {}
+    assert set(gameplay.due_reminders(game, meta, users, 9 * 3600, (12, 2))) == {'anna', 'bruno', 'carla'}
+
+
+def test_cron_tick_needs_the_token(app):
+    assert app.test_client().get('/cron/tick?token=x').status_code == 404           # no token configured
+    app.config['CRON_TOKEN'] = 'cron-secret'
+    assert app.test_client().get('/cron/tick?token=wrong').status_code == 404
+    assert app.test_client().get('/cron/tick?token=cron-secret').get_json() == {'game': None}
+    log = open(app.config['LOG_FILE'], encoding='utf-8').read()
+    assert 'cron-secret' not in log
+
+
+def test_cron_tick_sends_reminders_and_processes_passed_deadlines(app):
+    app.config['CRON_TOKEN'] = 'cron-secret'
+    service = FakePushService()
+    app.config['NOTIFIER'].opener = service
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes')
+    keys = subscribe_all(app, 'anna', 'bruno')
+    anna.post('/orders', phase='S1901M', order_PAR='A PAR - BUR', ready='yes')
+    tick = Browser(app)                                 # the external scheduler: no login
+    set_deadline(app, 3600 + 90)
+    reply = tick.get('/cron/tick?token=cron-secret').get_json()
+    assert reply['phase'] == 'S1901M' and reply['queued_notifications'] == 1
+    [(endpoint, note)] = payloads(service, keys)
+    assert endpoint.endswith('/bruno')                  # anna is done
+    assert note['title'] == 'Diplomacy: 1 h 1 min left for Spring 1901, Movement'
+    assert note['body'].startswith('Not done yet: Germany (no orders yet). Deadline: ')
+    tick.get('/cron/tick?token=cron-secret')
+    assert len(service.requests) == 1                   # not twice
+    set_deadline(app, -1)
+    assert tick.get('/cron/tick?token=cron-secret').get_json()['phase'] == 'F1901M'
+    assert [note['title'] for _, note in payloads(service, keys)[1:]] == ['Diplomacy: Fall 1901, Movement'] * 2

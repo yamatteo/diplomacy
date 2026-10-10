@@ -9,7 +9,8 @@
     ``players`` (how many people the game was started for), ``neutral`` (powers nobody plays: their units
     hold, never support and are disbanded if they must retreat; see `VARIANTS`), ``win`` (supply centers needed
     to win, if not the map's default) and ``allies`` ({power: power whose player also controls it}: in the
-    2 player game Italy joins the winner of a coin flip in 1902).
+    2 player game Italy joins the winner of a coin flip in 1902), ``phase_started`` (epoch seconds) and
+    ``reminded`` ({power: hours}: the last deadline reminder sent to that power in this phase, see `due_reminders`).
 """
 import functools
 import logging
@@ -116,8 +117,10 @@ def start_phase_clock(game, meta, now):
     phase = game.get_current_phase()
     hours = meta['phase_hours'].get(phase[-1], 0)
     meta['phase'] = phase
+    meta['phase_started'] = now
     meta['ready'] = {}
     meta['submitted'] = {}
+    meta['reminded'] = {}
     meta['deadline'] = now + hours * 3600 if hours and not game.is_game_done else None
 
 
@@ -230,6 +233,39 @@ def process_if_due(game, meta, users, store, now):
     else:
         LOGGER.warning('Stopped after processing %d phases in one request: %s', len(processed), processed)
     return processed
+
+
+def due_reminders(game, meta, users, now, hours):
+    """ Decides which players get a deadline reminder now and records it in ``meta['reminded']`` (the caller
+        saves). A power is reminded once per threshold in `hours` (e.g. (12, 2): 12 hours and 2 hours before the
+        deadline) while it has a player, has something to order and is not ready. Thresholds as long as the phase
+        itself are skipped, so a short phase does not get a reminder right after it starts; a missed threshold
+        (nobody visited the site in time) is not sent late once a smaller one is due.
+
+        :return: {username: {"hours": threshold, "powers": [(power, has submitted orders)]}}
+    """
+    deadline = meta.get('deadline')
+    if game.is_game_done or not deadline or now >= deadline or not hours:
+        return {}
+    remaining = deadline - now
+    started = meta.get('phase_started', now)
+    crossed = [threshold for threshold in hours if remaining <= threshold * 3600 < deadline - started]
+    if not crossed:
+        return {}
+    threshold = min(crossed)
+    reminded = meta.setdefault('reminded', {})
+    players = players_by_power(game, meta, users)
+    result = {}
+    for power in active_powers(game, meta, users):
+        if meta['ready'].get(power) or reminded.get(power, float('inf')) <= threshold:
+            continue
+        reminded[power] = threshold
+        entry = result.setdefault(players[power], {'hours': threshold, 'powers': []})
+        entry['powers'].append((power, power in meta['submitted']))
+    if result:
+        LOGGER.info('Deadline reminders for %s (%.1f h left, threshold %s h): %s', game.get_current_phase(),
+                    remaining / 3600, threshold, result)
+    return result
 
 
 # ----------------------------------------------------------------------------------------------------------------

@@ -43,7 +43,19 @@ Replace `USER` below with your PythonAnywhere username. On the EU site (eu.pytho
 3. Log in as an admin, open **Admin** and start a new game. Phase lengths and deadlines are set there.
 4. Deadlines are shown in the `Europe/Rome` time zone; to change it add `os.environ['DIPLOMACY_TIMEZONE'] = 'Europe/London'` to the WSGI file.
 
-There is no background process: a phase is processed when someone opens a page after the deadline has passed, or as soon as all players have marked themselves ready.
+There is no background process: a phase is processed when someone opens a page after the deadline has passed, or as soon as all players have marked themselves ready. To process deadlines on time and send reminders even when nobody visits, set up the external scheduler below.
+
+## Notifications and the external scheduler
+
+Players enable push notifications on the **Notifications** page (on iPhone, after adding the site to the home screen). They get one when a new phase needs their orders, and reminders 12 and 2 hours before the deadline if they are not done (change with `os.environ['DIPLOMACY_REMINDER_HOURS'] = '24,3'` in the WSGI file; empty for none). Nothing to install on the server: the push services of all browsers are on the free-tier allowlist. The server's key is `~/diplomacy-data/vapid_private.pem`; never delete it, or every player has to enable notifications again.
+
+New-phase notifications go out whenever a phase is processed. Reminders, and processing when a deadline passes, need a request to the site, so let a free external scheduler call it every 5 minutes:
+
+1. Generate a token: `python3 -c "import secrets; print(secrets.token_urlsafe(24))"`, put it in `CRON_TOKEN` in the WSGI file (a different value from `DEBUG_TOKEN`: this one is stored on a third-party site) and **Reload**.
+2. Check `https://USER.pythonanywhere.com/cron/tick?token=CRON_TOKEN` in a browser: it answers with the current phase as JSON (404 means the token is wrong or not set).
+3. On [cron-job.org](https://cron-job.org) (free account): *Create cronjob*, URL as above, every 5 minutes. Turn on its failure notifications so you hear if the site goes down.
+
+Each tick is one small request (in the access log, and in the app log with its result); `/debug/info` shows `cron_token_set`, the reminder hours and every user's devices with the last delivery and error. A device whose last error is `403`/unreachable means PythonAnywhere's proxy refused the push service (check the allowlist); `404`/`410` devices are removed automatically.
 
 ## Updating
 
@@ -63,4 +75,5 @@ Send Claude the output of these; together they replace shell access to the serve
 | Application log (every request, startup, tracebacks tagged with request id) | `/debug/logs?token=TOKEN&lines=500`, or file `~/diplomacy-data/logs/app.log` |
 | A user sees "Internal error … request id abc123" | Search the app log for `[abc123]` |
 | Check that error logging works end to end | `/debug/error?token=TOKEN` (fails on purpose) |
+| Notifications not arriving | `/debug/info` → `push.devices` (last delivery and last error per device), and `Push to` / `Notification` lines in the app log. The *Send me a test notification* button on the Notifications page reports failures directly. |
 | Web server / worker problems | **Server log** and **Error log** links on the Web tab |
