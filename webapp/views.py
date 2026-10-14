@@ -22,7 +22,7 @@ from markupsafe import Markup
 
 from webapp import gameplay, tutorial
 from webapp.users import (LINK_DAYS, check_login, link_state, login_failure_reason, normalize_email,
-                          password_problem)
+                          password_problem, verify_password)
 
 LOGGER = logging.getLogger(__name__)
 bp = Blueprint('game', __name__)
@@ -292,6 +292,52 @@ def set_password():
     response.headers['Referrer-Policy'] = 'no-referrer'
     response.headers['Cache-Control'] = 'no-store'
     return response
+
+
+@bp.route('/profile')
+@login_required
+def profile():
+    """ The user's own account: change the display name or the password. """
+    return render_template('profile.html')
+
+
+@bp.route('/profile/name', methods=['POST'])
+@login_required
+def profile_name():
+    """ Changes the user's display name. """
+    old, new = g.user.name, request.form.get('name', '').strip()
+    try:
+        current_app.config['USER_STORE'].set_name(g.user.email, new)
+    except ValueError as exc:
+        LOGGER.info('Name change of %r to %r refused: %s', g.user.email, new, exc)
+        flash('Name not changed: %s' % exc, 'error')
+        return redirect(url_for('game.profile'))
+    LOGGER.info('User %r changed their name: %r -> %r', g.user.email, old, new)
+    flash('Name changed to %s.' % new, 'ok')
+    return redirect(url_for('game.profile'))
+
+
+@bp.route('/profile/password', methods=['POST'])
+@login_required
+def profile_password():
+    """ Changes the user's password (the current one is required). Other sessions of the user are logged out;
+        this one stays logged in. """
+    if not verify_password(request.form.get('current', ''), g.user.password):
+        LOGGER.warning('Password change of %r refused: wrong current password (ip=%s)', g.user.email, g.client_ip)
+        flash('Password not changed: the current password is wrong.', 'error')
+        return redirect(url_for('game.profile'))
+    password = request.form.get('password', '')
+    error = password_problem(password, request.form.get('confirm', ''))
+    if error:
+        LOGGER.info('Password change of %r refused: %s', g.user.email, error)
+        flash('Password not changed: %s' % error, 'error')
+        return redirect(url_for('game.profile'))
+    user = current_app.config['USER_STORE'].set_password(g.user.email, password)
+    session['session_version'] = user.session_version       # keeps this session; older ones are logged out
+    LOGGER.info('User %r changed their password: session_version=%d (other sessions logged out), ip=%s',
+                user.email, user.session_version, g.client_ip)
+    flash('Password changed. Your other devices have to log in again.', 'ok')
+    return redirect(url_for('game.profile'))
 
 
 @bp.route('/logout', methods=['POST'])

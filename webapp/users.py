@@ -244,6 +244,20 @@ class UserStore:
             records.remove(record)
         return _to_user(record)
 
+    def set_name(self, email, name):
+        """ Changes a user's display name (same rules as at creation; changing only its capitalization is fine).
+            :return: the updated User. """
+        name = (name or '').strip()
+        name_problem = self.name_problem(name)
+        if name_problem:
+            raise ValueError(name_problem)
+        with self._editing() as records:
+            record = self._find(records, email)
+            if any(other is not record and other.get('name', '').lower() == name.lower() for other in records):
+                raise ValueError('The name %r is already taken.' % name)
+            record['name'] = name
+        return _to_user(record)
+
     def set_admin(self, email, is_admin):
         """ Grants or revokes admin rights. :return: the User. """
         with self._editing() as records:

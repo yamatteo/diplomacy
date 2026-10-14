@@ -676,3 +676,58 @@ def test_plan_assignment_without_randomness():
     from webapp import gameplay
     assert gameplay.plan_assignment(['a', 'b', 'c', 'd'], 3, random_select=False, random_powers=False) == {
         'a': ['ENGLAND', 'GERMANY', 'AUSTRIA'], 'b': ['RUSSIA', 'ITALY'], 'c': ['FRANCE', 'TURKEY']}
+
+
+def test_profile_needs_login(app):
+    anonymous = Browser(app)
+    for response in (anonymous.get('/profile'), anonymous.post('/profile/name', name='Evil'),
+                     anonymous.post('/profile/password', current='x', password='new-password', confirm='new-password')):
+        assert response.status_code == 302 and response.headers['Location'].endswith('/login')
+
+
+def test_user_changes_their_name(app):
+    start_game(app)
+    bruno = Browser(app, 'bruno')
+    page = bruno.text('/profile')
+    assert 'bruno@example.com' in page and 'value="Bruno"' in page
+    assert 'href="/profile"' in bruno.text('/')
+    bruno.post('/profile/name', name='  Il Kaiser  ')
+    assert 'Name changed to Il Kaiser' in bruno.text('/profile')
+    assert app.config['USER_STORE'].load()['bruno@example.com'].name == 'Il Kaiser'
+    assert '<td>Germany</td><td>Il Kaiser</td>' in Browser(app, 'anna').text('/')
+    # Taken (in any capitalization), empty or too long names are refused.
+    for name, error in [('ANNA', 'already taken'), ('', 'must be 1 to 30'), ('x' * 31, 'must be 1 to 30')]:
+        bruno.post('/profile/name', name=name)
+        assert error in bruno.text('/profile'), name
+    assert app.config['USER_STORE'].load()['bruno@example.com'].name == 'Il Kaiser'
+    # Changing only the capitalization of your own name is fine.
+    bruno.post('/profile/name', name='IL KAISER')
+    assert app.config['USER_STORE'].load()['bruno@example.com'].name == 'IL KAISER'
+    assert "User 'bruno@example.com' changed their name: 'Il Kaiser' -> 'IL KAISER'" in open(
+        app.config['LOG_FILE'], encoding='utf-8').read()
+
+
+def test_user_changes_their_password(app):
+    store = app.config['USER_STORE']
+    bruno, bruno_phone = Browser(app, 'bruno'), Browser(app, 'bruno')
+    before = store.load()['bruno@example.com'].password
+    # Wrong current password, too short or mismatched new one: refused, nothing changes.
+    bruno.post('/profile/password', current='bad-guess-123', password='brand-new-pass', confirm='brand-new-pass')
+    assert 'the current password is wrong' in bruno.text('/profile')
+    bruno.post('/profile/password', current='pw-bruno', password='short', confirm='short')
+    assert 'must be 8 to 200 characters' in bruno.text('/profile')
+    bruno.post('/profile/password', current='pw-bruno', password='brand-new-pass', confirm='other-new-pass')
+    assert 'The two passwords differ' in bruno.text('/profile')
+    assert store.load()['bruno@example.com'].password == before
+    assert bruno_phone.get('/').status_code == 200
+    # Success: this session stays, the other one is logged out, only the new password works.
+    bruno.post('/profile/password', current='pw-bruno', password='brand-new-pass', confirm='brand-new-pass')
+    assert 'Password changed' in bruno.text('/profile')
+    assert bruno.get('/').status_code == 200
+    assert bruno_phone.get('/').status_code == 302
+    assert 'Wrong email or password' in Browser(app).post('/login', email='bruno@example.com',
+                                                          password='pw-bruno').get_data(as_text=True)
+    assert Browser(app, 'bruno', 'brand-new-pass').get('/').status_code == 200
+    for path in (app.config['USERS_FILE'], app.config['LOG_FILE']):
+        content = open(path, encoding='utf-8').read()
+        assert 'brand-new-pass' not in content and 'bad-guess-123' not in content, path
