@@ -7,6 +7,7 @@ import time
 import pytest
 
 from webapp import create_app
+from webapp.users import UserStore
 
 USERS = """# test users
 anna:pw-anna:FRANCE:admin
@@ -15,12 +16,29 @@ carla:pw-carla:-
 """
 
 
+def email_of(name):
+    return name if '@' in name else name + '@example.com'
+
+
+def write_users(data_dir, text):
+    """ Creates the users of `text` (lines ``name:password:POWERS[:admin]``) in the data dir's users.json, with
+        email name@example.com and display name Name. """
+    store = UserStore(os.path.join(str(data_dir), 'users.json'))
+    for line in text.splitlines():
+        if line.strip() and not line.startswith('#'):
+            fields = line.split(':')
+            powers = [power for power in fields[2].split(',') if power not in ('', '-')]
+            store.create(email_of(fields[0]), fields[0].title(), is_admin=len(fields) == 4, powers=powers,
+                         password=fields[1])
+    return store
+
+
 @pytest.fixture(name='app')
 def app_fixture(tmp_path, monkeypatch):
     """ App with its data dir in a temp folder and three users (France+admin, Germany, spectator). """
     monkeypatch.setenv('DIPLOMACY_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('DIPLOMACY_DEBUG_TOKEN', 'debug-secret')
-    (tmp_path / 'users.txt').write_text(USERS)
+    write_users(tmp_path, USERS)
     app = create_app()
     app.config['TESTING'] = True
     return app
@@ -32,7 +50,7 @@ class Browser:
     def __init__(self, app, username=None, password=None):
         self.client = app.test_client()
         if username:
-            response = self.post('/login', username=username, password=password or 'pw-' + username)
+            response = self.post('/login', email=email_of(username), password=password or 'pw-' + username)
             assert response.status_code == 302, response.get_data(as_text=True)
 
     def csrf(self):
@@ -75,15 +93,193 @@ def start_game(app):
     return anna
 
 
-def test_users_file_is_created_with_random_admin(tmp_path, monkeypatch):
+def link_token(text):
+    """ The token of the set-password link in a page or reply. """
+    return re.search(r'/set-password\?token=([A-Za-z0-9_-]+)', text).group(1)
+
+
+def set_password_with_link(browser, token, password):
+    """ Opens a set-password link and chooses `password`. """
+    page = browser.text('/set-password?token=' + token)
+    assert 'Set your password' in page and 'name="password"' in page, page
+    return browser.post('/set-password', token=token, password=password, confirm=password)
+
+
+def test_first_admin_is_created_with_the_debug_link(tmp_path, monkeypatch):
     monkeypatch.setenv('DIPLOMACY_DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('DIPLOMACY_DEBUG_TOKEN', 'debug-secret')
     app = create_app()
-    lines = [line for line in (tmp_path / 'users.txt').read_text().splitlines() if not line.startswith('#')]
-    assert len(lines) == 1 and lines[0].startswith('admin:') and lines[0].endswith(':-:admin')
-    password = lines[0].split(':')[1]
-    assert len(password) >= 10
-    browser = Browser(app, 'admin', password)
+    log = open(app.config['LOG_FILE'], encoding='utf-8').read()
+    assert 'There are no users yet: open /debug/admin-link' in log
+    assert app.test_client().get('/debug/admin-link?email=boss@example.com').status_code == 404
+    assert app.test_client().get('/debug/admin-link?token=wrong&email=boss@example.com').status_code == 404
+    assert not os.path.exists(tmp_path / 'users.json')
+    reply = app.test_client().get('/debug/admin-link?token=debug-secret&email=Boss@Example.com')
+    assert reply.status_code == 200 and reply.headers['Referrer-Policy'] == 'no-referrer'
+    text = reply.get_data(as_text=True)
+    assert text.startswith('Set-password link for boss@example.com (admin)') and 'https://localhost/set-password' in text
+    token = link_token(text)
+    users = app.config['USER_STORE'].load()
+    assert list(users) == ['boss@example.com'] and users['boss@example.com'].is_admin
+    assert users['boss@example.com'].name == 'boss' and users['boss@example.com'].password is None
+    browser = Browser(app)
+    assert set_password_with_link(browser, token, 'boss-password').status_code == 302
     assert 'No game yet' in browser.text('/')
+    assert Browser(app, 'boss', 'boss-password').text('/admin')
+    # Recovery: an existing user gets a new link and becomes admin.
+    app.config['USER_STORE'].set_admin('boss@example.com', False)
+    reply = app.test_client().get('/debug/admin-link?token=debug-secret&email=boss@example.com')
+    assert reply.status_code == 200 and app.config['USER_STORE'].load()['boss@example.com'].is_admin
+    assert app.test_client().get('/debug/admin-link?token=debug-secret&email=not-an-email').status_code == 400
+    for path in ('users.json', 'logs/app.log'):
+        content = (tmp_path / path).read_text()
+        assert token not in content and 'boss-password' not in content, path
+
+
+def test_without_users_and_debug_token_the_log_says_nobody_can_log_in(tmp_path, monkeypatch):
+    monkeypatch.setenv('DIPLOMACY_DATA_DIR', str(tmp_path))
+    (tmp_path / 'users.txt').write_text('anna:pw-anna:FRANCE:admin\n')
+    app = create_app()
+    log = open(app.config['LOG_FILE'], encoding='utf-8').read()
+    assert 'users.txt is no longer used' in log and 'nobody can log in' in log
+    assert app.config['USER_STORE'].load() == {}
+    assert Browser(app).post('/login', email='anna', password='pw-anna').status_code == 200   # not logged in
+
+
+def invite(admin, email, name, **extra):
+    """ The admin adds a user; returns the token of the link shown on the admin page. """
+    assert admin.post('/admin/users/add', email=email, name=name, **extra).status_code == 302
+    page = admin.text('/admin')
+    assert 'shown only now' in page and 'href="mailto:%s?subject=' % email.lower() in page
+    return link_token(page)
+
+
+def test_invited_user_sets_a_password_with_a_link_that_works_once(app):
+    anna = Browser(app, 'anna')
+    token = invite(anna, 'Dario@Example.com', 'Dario')
+    page = anna.text('/admin')
+    assert 'shown only now' not in page                                # the link is shown once
+    assert 'dario@example.com' in page and 'link pending until' in page
+    assert 'mailto:dario@example.com?subject=' not in page and token not in page
+    # A user without a password cannot log in, whatever they type.
+    assert Browser(app).post('/login', email='dario@example.com', password='').status_code == 200
+    dario = Browser(app)
+    page = dario.text('/set-password?token=' + token)
+    assert 'dario@example.com' in page and 'Dario' in page
+    assert dario.get('/set-password?token=' + token).headers['Referrer-Policy'] == 'no-referrer'
+    reply = dario.post('/set-password', token=token, password='short', confirm='short')
+    assert 'must be 8 to 200 characters' in reply.get_data(as_text=True)
+    reply = dario.post('/set-password', token=token, password='dario-password', confirm='other-password')
+    assert 'The two passwords differ' in reply.get_data(as_text=True)
+    assert dario.post('/set-password', token=token, password='dario-password',
+                      confirm='dario-password').status_code == 302
+    assert 'Password saved' in dario.text('/')                          # logged in
+    # Login with the email in any case.
+    assert Browser(app, ' DARIO@example.COM ', 'dario-password').text('/')
+    # The link was used: it does not work again.
+    again = Browser(app)
+    assert 'This link does not work' in again.text('/set-password?token=' + token)
+    reply = again.post('/set-password', token=token, password='evil-password', confirm='evil-password')
+    assert 'This link does not work' in reply.get_data(as_text=True)
+    assert Browser(app).post('/login', email='dario@example.com', password='evil-password').status_code == 200
+    assert 'Wrong email or password' in Browser(app).post('/login', email='dario@example.com',
+                                                          password='evil-password').get_data(as_text=True)
+    # Neither the password nor the token is stored or logged.
+    for path in (app.config['USERS_FILE'], app.config['LOG_FILE']):
+        content = open(path, encoding='utf-8').read()
+        assert token not in content and 'dario-password' not in content, path
+    assert 'pw-anna' not in open(app.config['USERS_FILE'], encoding='utf-8').read()
+    assert 'Password set with a link: user=\'dario@example.com\'' in open(app.config['LOG_FILE'],
+                                                                         encoding='utf-8').read()
+
+
+def test_expired_link_is_refused(app):
+    anna = Browser(app, 'anna')
+    token = invite(anna, 'dario@example.com', 'Dario')
+    path = app.config['USERS_FILE']
+    with open(path, encoding='utf-8') as file:
+        data = json.load(file)
+    [record] = [record for record in data['users'] if record['email'] == 'dario@example.com']
+    record['link']['expires'] = time.time() - 1
+    with open(path, 'w', encoding='utf-8') as file:
+        json.dump(data, file)
+    dario = Browser(app)
+    assert 'This link has expired' in dario.text('/set-password?token=' + token)
+    reply = dario.post('/set-password', token=token, password='dario-password', confirm='dario-password')
+    assert 'This link has expired' in reply.get_data(as_text=True)
+    assert app.config['USER_STORE'].load()['dario@example.com'].password is None
+    assert 'link expired' in anna.text('/admin')
+
+
+def test_new_password_logs_out_other_sessions(app):
+    bruno_phone = Browser(app, 'bruno')
+    assert bruno_phone.get('/').status_code == 200
+    anna = Browser(app, 'anna')
+    assert anna.post('/admin/users/link', email='bruno@example.com').status_code == 302
+    token = link_token(anna.text('/admin'))
+    assert bruno_phone.get('/').status_code == 200          # a new link alone changes nothing
+    assert Browser(app, 'bruno').get('/').status_code == 200   # the old password still works until the link is used
+    bruno_laptop = Browser(app)
+    assert set_password_with_link(bruno_laptop, token, 'new-bruno-password').status_code == 302
+    assert bruno_laptop.get('/').status_code == 200
+    assert bruno_phone.get('/').status_code == 302            # logged out
+    assert 'from before a password change' in open(app.config['LOG_FILE'], encoding='utf-8').read()
+    assert Browser(app).post('/login', email='bruno@example.com', password='pw-bruno').status_code == 200
+    assert Browser(app, 'bruno', 'new-bruno-password').get('/').status_code == 200
+
+
+def test_admin_manages_users(app):
+    anna = Browser(app, 'anna')
+    invite(anna, 'dario@example.com', 'Dario')
+    # Email and name must be valid and unique (ignoring case).
+    for email, name, error in [('DARIO@example.com', 'Someone', 'already a user'),
+                               ('elena@example.com', 'dario', 'already taken'),
+                               ('not-an-email', 'Elena', 'not a valid email'),
+                               ('elena@example.com', '', 'must be 1 to 30'),
+                               ('elena@example.com', 'x' * 31, 'must be 1 to 30')]:
+        anna.post('/admin/users/add', email=email, name=name)
+        assert error in anna.text('/admin'), (email, name)
+    assert sorted(app.config['USER_STORE'].load()) == ['anna@example.com', 'bruno@example.com',
+                                                       'carla@example.com', 'dario@example.com']
+    # Admin rights.
+    anna.post('/admin/users/admin', email='dario@example.com', admin='yes')
+    assert app.config['USER_STORE'].load()['dario@example.com'].is_admin
+    anna.post('/admin/users/admin', email='dario@example.com', admin='')
+    assert not app.config['USER_STORE'].load()['dario@example.com'].is_admin
+    anna.post('/admin/users/admin', email='anna@example.com', admin='')
+    assert 'cannot change your own admin rights' in anna.text('/admin')
+    assert app.config['USER_STORE'].load()['anna@example.com'].is_admin
+    # Deleting needs confirmation, and is not possible for yourself.
+    anna.post('/admin/users/delete', email='anna@example.com', confirm='yes')
+    assert 'cannot delete yourself' in anna.text('/admin')
+    anna.post('/admin/users/delete', email='bruno@example.com')
+    assert 'bruno@example.com' in app.config['USER_STORE'].load()
+    bruno = Browser(app, 'bruno')
+    anna.post('/admin/users/delete', email='bruno@example.com', confirm='yes')
+    assert 'bruno@example.com' not in app.config['USER_STORE'].load()
+    assert bruno.get('/').status_code == 302                  # deleted users are logged out
+    assert 'anna@example.com' in app.config['USER_STORE'].load()
+
+
+def test_only_admins_can_manage_users(app):
+    bruno = Browser(app, 'bruno')
+    for path, form in [('/admin/users/add', {'email': 'evil@example.com', 'name': 'Evil'}),
+                       ('/admin/users/link', {'email': 'anna@example.com'}),
+                       ('/admin/users/admin', {'email': 'bruno@example.com', 'admin': 'yes'}),
+                       ('/admin/users/delete', {'email': 'anna@example.com', 'confirm': 'yes'})]:
+        assert bruno.post(path, **form).status_code == 403, path
+    users = app.config['USER_STORE'].load()
+    assert sorted(users) == ['anna@example.com', 'bruno@example.com', 'carla@example.com']
+    assert not users['bruno@example.com'].is_admin and users['anna@example.com'].link is None
+
+
+def test_game_page_shows_names_not_emails(app):
+    anna = start_game(app)
+    page = Browser(app, 'bruno').text('/')
+    assert '<td>France</td><td>Anna</td>' in page and '<td>Germany</td><td>Bruno</td>' in page
+    assert 'anna@example.com' not in page and 'carla@example.com' not in page
+    assert 'anna@example.com' not in Browser(app, 'bruno').text('/history')
+    assert 'anna@example.com' in anna.text('/admin')
 
 
 def test_login_required_and_wrong_password(app):
@@ -91,18 +287,18 @@ def test_login_required_and_wrong_password(app):
     assert anonymous.get('/').status_code == 302
     assert anonymous.get('/history').status_code == 302
     assert anonymous.get('/admin').status_code == 302
-    response = anonymous.post('/login', username='anna', password='wrong')
-    assert response.status_code == 200 and 'Wrong username or password' in response.get_data(as_text=True)
+    response = anonymous.post('/login', email='anna@example.com', password='bad-guess-123')
+    assert response.status_code == 200 and 'Wrong email or password' in response.get_data(as_text=True)
     assert anonymous.get('/').status_code == 302
     # Passwords never reach the log.
     log = open(app.config['LOG_FILE'], encoding='utf-8').read()
-    assert 'pw-anna' not in log and 'wrong' not in log.split('Failed login')[-1].split('\n')[0]
+    assert 'pw-anna' not in log and 'bad-guess-123' not in log and 'reason=wrong password' in log
 
 
 def test_post_without_csrf_token_is_rejected(app):
     client = app.test_client()
     client.get('/login')
-    assert client.post('/login', data={'username': 'anna', 'password': 'pw-anna'}).status_code == 400
+    assert client.post('/login', data={'email': 'anna@example.com', 'password': 'pw-anna'}).status_code == 400
 
 
 def test_only_admin_can_use_admin_pages(app):
@@ -319,7 +515,7 @@ def test_builds_are_limited_and_retreat_phase_is_skipped(app):
 
 def test_no_players_means_no_automatic_processing(tmp_path, monkeypatch):
     monkeypatch.setenv('DIPLOMACY_DATA_DIR', str(tmp_path))
-    (tmp_path / 'users.txt').write_text('boss:pw-boss:-:admin\n')
+    write_users(tmp_path, 'boss:pw-boss:-:admin\n')
     app = create_app()
     boss = Browser(app, 'boss')
     boss.post('/admin/new-game', confirm='yes')
@@ -337,9 +533,10 @@ def test_debug_info_reports_game_without_secrets(app):
     response = app.test_client().get('/debug/info?token=debug-secret')
     info = response.get_json()
     assert info['game']['phase'] == 'S1901M'
-    assert {'name': 'bruno', 'powers': ['GERMANY'], 'admin': False} in info['users']
+    assert {'email': 'bruno@example.com', 'name': 'Bruno', 'powers': ['GERMANY'], 'admin': False,
+            'has_password': True, 'link': 'none', 'link_expires': None} in info['users']
     text = response.get_data(as_text=True)
-    assert 'pw-anna' not in text and 'A PAR - BUR' not in text
+    assert 'pw-anna' not in text and 'A PAR - BUR' not in text and 'pbkdf2' not in text
 
 
 def test_help_page_examples_and_rulebook(app):
@@ -369,7 +566,7 @@ def test_help_page_examples_and_rulebook(app):
 
 def make_app(tmp_path, monkeypatch, users):
     monkeypatch.setenv('DIPLOMACY_DATA_DIR', str(tmp_path))
-    (tmp_path / 'users.txt').write_text(users)
+    write_users(tmp_path, users)
     app = create_app()
     app.config['TESTING'] = True
     return app
@@ -453,29 +650,26 @@ def test_neutral_power_keeps_units_it_has_no_centers_for(tmp_path, monkeypatch):
 
 
 def test_admin_assigns_powers_to_random_users(tmp_path, monkeypatch):
-    users = ('# my players\nboss:pw-boss:-:admin\n' +
-             ''.join('p%d:pw-p%d:-\n' % (i, i) for i in range(1, 5)))
+    users = 'boss:pw-boss:-:admin\n' + ''.join('p%d:pw-p%d:-\n' % (i, i) for i in range(1, 5))
     app = make_app(tmp_path, monkeypatch, users)
+    store = app.config['USER_STORE']
+    candidates = ['p%d@example.com' % i for i in range(1, 5)]
     boss = Browser(app, 'boss')
-    boss.post('/admin/assign', players='3', candidates=['p1', 'p2', 'p3', 'p4'],
-              random_select='yes', random_powers='yes')
-    text = (tmp_path / 'users.txt').read_text()
-    assert text.startswith('# my players\nboss:pw-boss:-:admin\n')          # comments, admin and passwords kept
-    assert (tmp_path / 'users.txt.bak').read_text() == users
-    from webapp.users import load_users
-    loaded = load_users(str(tmp_path / 'users.txt'))
+    boss.post('/admin/assign', players='3', candidates=candidates, random_select='yes', random_powers='yes')
+    loaded = store.load()
     groups = sorted(sorted(user.powers) for user in loaded.values() if user.powers)
     assert groups == [['AUSTRIA', 'ENGLAND', 'GERMANY'], ['FRANCE', 'TURKEY'], ['ITALY', 'RUSSIA']]
-    assert loaded['boss'].is_admin and loaded['boss'].powers == ()
+    assert loaded['boss@example.com'].is_admin and loaded['boss@example.com'].powers == ()
+    assert all(user.password for user in loaded.values())                  # passwords and admin flags kept
     # Not enough candidates, and a game in progress needs confirmation.
-    assert 'users available' in (boss.post('/admin/assign', players='4', candidates=['p1']) and
+    assert 'users available' in (boss.post('/admin/assign', players='4', candidates=candidates[:1]) and
                                  boss.text('/admin'))
     boss.post('/admin/new-game', confirm='yes', players='3')
-    before = (tmp_path / 'users.txt').read_text()
-    boss.post('/admin/assign', players='2', candidates=['p1', 'p2'])
-    assert (tmp_path / 'users.txt').read_text() == before
-    boss.post('/admin/assign', players='2', candidates=['p1', 'p2'], confirm='yes', random_powers='yes')
-    assert sum(1 for user in load_users(str(tmp_path / 'users.txt')).values() if user.powers) == 2
+    before = (tmp_path / 'users.json').read_text()
+    boss.post('/admin/assign', players='2', candidates=candidates[:2])
+    assert (tmp_path / 'users.json').read_text() == before
+    boss.post('/admin/assign', players='2', candidates=candidates[:2], confirm='yes', random_powers='yes')
+    assert sum(1 for user in store.load().values() if user.powers) == 2
 
 
 def test_plan_assignment_without_randomness():

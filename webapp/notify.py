@@ -152,7 +152,7 @@ class Notifier:
             `users`. Never raises: failures are logged and recorded on the subscription.
 
             :param site_url: the site's root URL; the VAPID subject if no contact address is configured.
-            :return: {username: [SendResult]}
+            :return: {email: [SendResult]}
         """
         started, now = time.perf_counter(), time.time()
         subject = self.contact or site_url

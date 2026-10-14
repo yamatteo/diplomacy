@@ -12,7 +12,7 @@
     - DIPLOMACY_PUSH_CONTACT: contact sent to push services with each notification, e.g. mailto:you@example.com
       (default: the site's URL).
 
-    Files in the data dir: users.txt (players, see webapp/users.py), game.json (+ backups/, archive/),
+    Files in the data dir: users.json (accounts, see webapp/users.py), game.json (+ backups/, archive/),
     secret_key (signs session cookies), logs/app.log, vapid_private.pem and subscriptions.json (push
     notifications, see webapp/notify.py).
 """
@@ -33,7 +33,7 @@ from flask import Flask, abort, g, jsonify, request
 
 from webapp.diagnostics import REPO_DIR, environment_info
 from webapp.store import GameStore
-from webapp.users import ensure_users_file, load_users, users_summary
+from webapp.users import UserStore, normalize_email, users_summary
 
 LOGGER = logging.getLogger('webapp')
 LOG_FORMAT = '%(asctime)s %(levelname)s [pid %(process)d] [%(request_id)s] %(name)s: %(message)s'
@@ -93,7 +93,7 @@ def game_diagnostics(app):
     from webapp import gameplay     # pylint: disable=import-outside-toplevel
     result = {}
     try:
-        users = load_users(app.config['USERS_FILE'])
+        users = app.config['USER_STORE'].load()
         result['users'] = users_summary(users)
         store = app.config['GAME_STORE']
         result['game_file'] = {'path': store.path, 'exists': store.exists(),
@@ -122,7 +122,7 @@ def create_app():
         'DATA_DIR': data_dir,
         'LOG_FILE': os.path.join(data_dir, 'logs', 'app.log'),
         'DEBUG_TOKEN': os.environ.get('DIPLOMACY_DEBUG_TOKEN', ''),
-        'USERS_FILE': os.path.join(data_dir, 'users.txt'),
+        'USERS_FILE': os.path.join(data_dir, 'users.json'),
         'TIMEZONE': os.environ.get('DIPLOMACY_TIMEZONE', 'Europe/Rome'),
         'PUSH_CONTACT': os.environ.get('DIPLOMACY_PUSH_CONTACT', ''),
         'CRON_TOKEN': os.environ.get('DIPLOMACY_CRON_TOKEN', ''),
@@ -154,7 +154,7 @@ def create_app():
     app.secret_key = load_secret_key(os.path.join(data_dir, 'secret_key'))
     app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(days=90), SESSION_COOKIE_SAMESITE='Lax',
                       SESSION_COOKIE_HTTPONLY=True)
-    ensure_users_file(config['USERS_FILE'])
+    app.config['USER_STORE'] = UserStore(config['USERS_FILE'])
     try:
         from webapp.notify import Notifier  # pylint: disable=import-outside-toplevel
         app.config['NOTIFIER'] = Notifier(data_dir, config['PUSH_CONTACT'] or None)
@@ -177,6 +177,17 @@ def create_app():
                        'and reminders only sent when someone opens a page')
     if not info['in_virtualenv']:
         LOGGER.warning('Not running inside a virtualenv: check the virtualenv path on the Web tab')
+    old_users_file = os.path.join(data_dir, 'users.txt')
+    if os.path.exists(old_users_file):
+        LOGGER.warning('%s is no longer used (accounts are in %s, managed from the admin page): it is ignored '
+                       'and can be deleted', old_users_file, config['USERS_FILE'])
+    if not app.config['USER_STORE'].load():
+        if config['DEBUG_TOKEN']:
+            LOGGER.warning('There are no users yet: open /debug/admin-link?token=DEBUG_TOKEN&email=YOUR_EMAIL to '
+                           'create the first admin and get a link to set its password')
+        else:
+            LOGGER.error('There are no users and DIPLOMACY_DEBUG_TOKEN is not set: nobody can log in. Set the '
+                         'debug token, then open /debug/admin-link?token=DEBUG_TOKEN&email=YOUR_EMAIL')
     for key, value in game_diagnostics(app).items():
         LOGGER.info('startup %s = %r', key, value)
 
@@ -237,6 +248,34 @@ def create_app():
 
     from webapp import views    # pylint: disable=import-outside-toplevel
     app.register_blueprint(views.bp)
+
+    @app.route('/debug/admin-link')
+    def debug_admin_link():
+        """ Bootstrap and recovery: makes `email` an admin (creating the user if needed, named `name` or after the
+            email) and returns a new link to set its password. """
+        require_debug_token()
+        store, now = app.config['USER_STORE'], time.time()
+        email = normalize_email(request.args.get('email', ''))
+        try:
+            user = store.load().get(email)
+            if not user:
+                user = store.create(email, request.args.get('name') or email.split('@')[0], is_admin=True, now=now)
+                LOGGER.warning('Debug admin link: created admin user %r (name %r)', user.email, user.name)
+            elif not user.is_admin:
+                store.set_admin(email, True)
+                LOGGER.warning('Debug admin link: made %r an admin', email)
+            token, expires = store.issue_link(email, now)
+        except ValueError as exc:
+            LOGGER.warning('Debug admin link for %r refused: %s', email, exc)
+            return '%s\n' % exc, 400, {'Content-Type': 'text/plain; charset=utf-8'}
+        LOGGER.warning('Debug admin link: issued a set-password link for %r, valid until %s', email,
+                       time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(expires)))
+        url = views.absolute_url('game.set_password', token=token)
+        return ('Set-password link for %s (admin), valid for %d days, usable once:\n%s\n'
+                % (email, (expires - now) // 86400, url), 200,
+                {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store',
+                 'Referrer-Policy': 'no-referrer'})
+
 
     LOGGER.info('=== App ready in %.2f s ===', time.time() - started)
     return app

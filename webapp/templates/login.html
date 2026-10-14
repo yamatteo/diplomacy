@@ -5,9 +5,10 @@
   <h1>Log in</h1>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Username <input type="text" name="username" autocomplete="username" autofocus required></label>
+    <label>Email <input type="email" name="email" autocomplete="username" autofocus required></label>
     <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
     <button class="primary">Log in</button>
   </form>
+  <p class="muted">New here, or forgot your password? Ask the admin for a link to set it.</p>
 </div>
 {% endblock %}

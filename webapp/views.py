@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -20,7 +21,8 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
 from markupsafe import Markup
 
 from webapp import gameplay, tutorial
-from webapp.users import assign_powers, check_login, load_users
+from webapp.users import (LINK_DAYS, check_login, link_state, login_failure_reason, normalize_email,
+                          password_problem)
 
 LOGGER = logging.getLogger(__name__)
 bp = Blueprint('game', __name__)
@@ -31,12 +33,20 @@ bp = Blueprint('game', __name__)
 # ----------------------------------------------------------------------------------------------------------------
 @bp.before_request
 def load_user():
-    """ Resolves the logged-in user from the users file (so removing a user logs them out) and checks CSRF. """
-    g.users = load_users(current_app.config['USERS_FILE'])
+    """ Resolves the logged-in user from the users file (so removing a user, or changing their password, logs them
+        out) and checks CSRF. """
+    g.users = current_app.config['USER_STORE'].load()
     g.user = g.users.get(session.get('user', ''))
     if session.get('user') and not g.user:
-        LOGGER.warning('Session for unknown user %r (removed from users file?): logging out', session.get('user'))
+        LOGGER.warning('Session for unknown user %r (deleted?): logging out', session.get('user'))
         session.pop('user', None)
+        session.pop('session_version', None)
+    elif g.user and session.get('session_version') != g.user.session_version:
+        LOGGER.warning('Session of %r is from before a password change (session version %r, now %r): logging out',
+                       g.user.email, session.get('session_version'), g.user.session_version)
+        g.user = None
+        session.pop('user', None)
+        session.pop('session_version', None)
     if 'csrf' not in session:
         session['csrf'] = secrets.token_urlsafe(16)
     if request.method == 'POST':
@@ -64,7 +74,7 @@ def admin_required(view):
         if not g.user:
             return redirect(url_for('game.login'))
         if not g.user.is_admin:
-            LOGGER.warning('Non-admin %r tried to access %s', g.user.name, request.path)
+            LOGGER.warning('Non-admin %r tried to access %s', g.user.email, request.path)
             abort(403)
         return view(*args, **kwargs)
     return wrapper
@@ -99,7 +109,7 @@ MAX_PUSH_TTL = 28 * 86400           # push services keep messages at most about 
 
 
 def queue_notification(users, data, topic=None, ttl=None):
-    """ Schedules a push notification to `users` (usernames) for after the response. """
+    """ Schedules a push notification to `users` (emails) for after the response. """
     if current_app.config['NOTIFIER'] and users:
         g.setdefault('pending_push', []).append((sorted(users), data, topic, ttl or 7 * 86400))
 
@@ -223,19 +233,65 @@ def phase_title(phase):
 def login():
     """ Login form. """
     if request.method == 'POST':
-        name = request.form.get('username', '').strip()
-        user = check_login(g.users, name, request.form.get('password', ''))
+        email = normalize_email(request.form.get('email', ''))
+        user = check_login(g.users, email, request.form.get('password', ''))
         if user:
-            session.clear()
-            session['user'] = user.name
-            session['csrf'] = secrets.token_urlsafe(16)
-            session.permanent = True
-            LOGGER.info('Login: user=%r powers=%s admin=%s ip=%s', user.name, list(user.powers), user.is_admin,
-                        g.client_ip)
+            log_in(user)
+            LOGGER.info('Login: user=%r name=%r powers=%s admin=%s ip=%s', user.email, user.name, list(user.powers),
+                        user.is_admin, g.client_ip)
             return redirect(url_for('game.index'))
-        LOGGER.warning('Failed login: username=%r known_user=%s ip=%s', name, name in g.users, g.client_ip)
-        flash('Wrong username or password.', 'error')
+        LOGGER.warning('Failed login: email=%r reason=%s ip=%s', email, login_failure_reason(g.users, email),
+                       g.client_ip)
+        flash('Wrong email or password.', 'error')
     return render_template('login.html')
+
+
+def log_in(user):
+    """ Starts a fresh session for `user`. """
+    session.clear()
+    session['user'] = user.email
+    session['session_version'] = user.session_version
+    session['csrf'] = secrets.token_urlsafe(16)
+    session.permanent = True
+    g.user = user
+
+
+@bp.route('/set-password', methods=['GET', 'POST'])
+def set_password():
+    """ The page a set-password link opens (for new users and forgotten passwords): the user chooses a password
+        and is logged in. The link works once, until it expires. The token travels in the query string on GET and
+        in a hidden field on POST; it is never logged. """
+    now = time.time()
+    store = current_app.config['USER_STORE']
+    token = request.form.get('token', '') if request.method == 'POST' else request.args.get('token', '')
+    user, problem = store.find_link(token, now)
+    if problem:
+        LOGGER.warning('Set-password link %s (%s, user=%r, ip=%s)', 'expired' if problem == 'expired' else 'invalid',
+                       request.method, user.email if user else None, g.client_ip)
+        response = Response(render_template('set_password.html', invalid=True, expired=problem == 'expired'))
+    elif request.method == 'POST':
+        password = request.form.get('password', '')
+        error = password_problem(password, request.form.get('confirm', ''))
+        if error:
+            LOGGER.info('Set-password for %r refused: %s', user.email, error)
+            flash(error, 'error')
+            response = Response(render_template('set_password.html', user=user, token=token))
+        else:
+            user = store.redeem_link(token, password, now)
+            if not user:                    # expired or used between the check above and now
+                LOGGER.warning('Set-password link stopped working while being used (ip=%s)', g.client_ip)
+                response = Response(render_template('set_password.html', invalid=True))
+            else:
+                LOGGER.info('Password set with a link: user=%r session_version=%d (older sessions logged out), '
+                            'ip=%s', user.email, user.session_version, g.client_ip)
+                log_in(user)
+                flash('Password saved. You are logged in.', 'ok')
+                response = redirect(url_for('game.index'))
+    else:
+        response = Response(render_template('set_password.html', user=user, token=token))
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @bp.route('/logout', methods=['POST'])
@@ -310,7 +366,7 @@ def orders():
             return fail(['There is no game in progress.'], reload=True)
         powers = gameplay.powers_of(game, meta, g.user)
         if not powers:
-            LOGGER.warning('User %r without a playable power tried to submit orders', g.user.name)
+            LOGGER.warning('User %r without a playable power tried to submit orders', g.user.email)
             abort(403)
         phase = game.get_current_phase()
         if request.form.get('phase') != phase:
@@ -327,7 +383,7 @@ def orders():
         foreign = [loc for loc, order in chosen.items() if order and loc not in owner]
         if foreign:
             LOGGER.warning('User %r (powers %s) sent orders for locations that are not theirs: %s',
-                           g.user.name, powers, foreign)
+                           g.user.email, powers, foreign)
             return fail(['You cannot give orders for %s.' % ', '.join(sorted(foreign))])
         for loc, order in chosen.items():
             if loc in owner:
@@ -348,7 +404,7 @@ def orders():
                 return jsonify(ok=True, reload=True)
             state = my_orders_state(game, meta, powers)
             unready = [power for power in was_ready if not meta['ready'].get(power)]
-            LOGGER.info('Autosave by %r in %s: ready=%s no longer ready=%s', g.user.name, phase,
+            LOGGER.info('Autosave by %r in %s: ready=%s no longer ready=%s', g.user.email, phase,
                         {power: meta['ready'].get(power, False) for power in by_power}, unready)
             return jsonify(ok=True, ready=state['my_ready'], unready=bool(unready), svg=str(state['svg']),
                            summary=render_template('_orders_summary.html', **state),
@@ -474,6 +530,11 @@ def push_site_url():
     return 'https://%s/' % request.host
 
 
+def absolute_url(endpoint, **values):
+    """ The https URL of a page, for links sent outside the site (e.g. set-password links). """
+    return push_site_url()[:-1] + url_for(endpoint, **values)
+
+
 def device_label(agent):
     """ 'Mozilla/5.0 (Linux; Android 14; ...) Chrome/129...' -> 'Chrome on Android'. Rough, for humans only. """
     system = next((name for pattern, name in [('iPhone|iPad|iPod', 'iPhone/iPad'), ('Android', 'Android'),
@@ -491,7 +552,7 @@ def notifications():
     """ Enable notifications on this device, send a test, see and remove the user's devices. """
     notifier = current_app.config['NOTIFIER']
     devices = []
-    for entry in notifier.store.for_users([g.user.name]) if notifier else []:
+    for entry in notifier.store.for_users([g.user.email]) if notifier else []:
         from webapp.notify import describe_device   # pylint: disable=import-outside-toplevel (see notifier_or_404)
         device = describe_device(entry)
         error = device['last_error']
@@ -518,12 +579,12 @@ def notifications_subscribe():
         subscription = None
     error = webpush.check_subscription(subscription)
     if error:
-        LOGGER.warning('Rejected push subscription from %r: %s', g.user.name, error)
+        LOGGER.warning('Rejected push subscription from %r: %s', g.user.email, error)
         return jsonify(ok=False, error='This browser sent an unusable subscription: %s.' % error), 400
     agent = request.headers.get('User-Agent', '')
-    is_new = notifier.store.add(g.user.name, subscription, agent, time.time())
+    is_new = notifier.store.add(g.user.email, subscription, agent, time.time())
     LOGGER.log(logging.INFO if is_new else logging.DEBUG, 'Push subscription %s %s for %r (%s)',
-               webpush.describe_endpoint(subscription['endpoint']), 'added' if is_new else 'refreshed', g.user.name,
+               webpush.describe_endpoint(subscription['endpoint']), 'added' if is_new else 'refreshed', g.user.email,
                device_label(agent))
     return jsonify(ok=True, new=is_new, device=device_id(subscription['endpoint']))
 
@@ -537,8 +598,8 @@ def notifications_remove():
     from webapp.notify import device_id             # pylint: disable=import-outside-toplevel (see notifier_or_404)
     endpoint = request.form.get('endpoint', '')
     device = device_id(endpoint) if endpoint else request.form.get('device', '')
-    removed = notifier.store.remove(g.user.name, device)
-    LOGGER.info('Push device %s of %r removed by the user: %s', device, g.user.name, removed)
+    removed = notifier.store.remove(g.user.email, device)
+    LOGGER.info('Push device %s of %r removed by the user: %s', device, g.user.email, removed)
     if endpoint:
         return jsonify(ok=True, removed=removed)
     flash('Device removed: it will not get notifications any more.' if removed else 'Device not found.',
@@ -551,9 +612,9 @@ def notifications_remove():
 def notifications_test():
     """ Sends a test notification to all the user's devices right away and reports the outcome. """
     notifier = notifier_or_404()
-    results = notifier.send([g.user.name], {'title': 'Diplomacy', 'body': 'Test: notifications work on this device.',
+    results = notifier.send([g.user.email], {'title': 'Diplomacy', 'body': 'Test: notifications work on this device.',
                                             'url': url_for('game.notifications'), 'tag': 'test'},
-                            push_site_url(), ttl=600)[g.user.name]
+                            push_site_url(), ttl=600)[g.user.email]
     if not results:
         flash('You have not enabled notifications on any device yet.', 'error')
     elif all(result.ok for result in results):
@@ -575,9 +636,17 @@ def notifications_test():
 def admin():
     """ Admin page. """
     now = time.time()
+    new_link = session.pop('new_link', None)       # shown once, right after it was issued
+    if new_link:
+        new_link['expires_text'] = format_time(new_link['expires'])
+        new_link['mailto'] = 'mailto:%s?%s' % (new_link['email'], urllib.parse.urlencode({
+            'subject': 'Diplomacy: set your password',
+            'body': 'Open this link to set your password for our Diplomacy game (it works once, until %s):\n\n%s\n'
+                    % (new_link['expires_text'], new_link['url'])}, quote_via=urllib.parse.quote))
+    users = [dict(user._asdict(), link_state=link_state(user, now),
+                  link_expires=format_time(user.link['expires']) if user.link else '') for user in g.users.values()]
     with open_game() as (game, meta, _):
-        context = {'has_game': bool(game), 'users': list(g.users.values()),
-                   'users_file': current_app.config['USERS_FILE'],
+        context = {'has_game': bool(game), 'users': users, 'new_link': new_link, 'link_days': LINK_DAYS,
                    'variants': {count: {'groups': groups, 'neutral': gameplay.neutral_powers(count),
                                         'warnings': gameplay.check_assignment(count, g.users)}
                                 for count, groups in sorted(gameplay.VARIANTS.items(), reverse=True)},
@@ -608,11 +677,11 @@ def admin_new_game():
     store = current_app.config['GAME_STORE']
     with store.locked():
         archived = store.archive()
-        game, meta = gameplay.new_game(g.user.name, now, players)
+        game, meta = gameplay.new_game(g.user.email, now, players)
         store.save(game, meta)
     warnings = gameplay.check_assignment(players, g.users)
     LOGGER.info('Admin %r started a new %d player game (previous archived to %s). users=%s warnings=%s',
-                g.user.name, players, archived, {user.name: list(user.powers) for user in g.users.values()}, warnings)
+                g.user.email, players, archived, {user.email: list(user.powers) for user in g.users.values()}, warnings)
     flash('New game started for %d players.' % players, 'ok')
     for warning in warnings:
         flash('Check users file: %s' % warning, 'error')
@@ -624,7 +693,7 @@ def admin_new_game():
 def admin_assign():
     """ Rewrites the powers in the users file: picks N of the ticked users (randomly or in file order) and gives
         them the groups of powers of the N player game (shuffled or in order). Everybody else gets no power. """
-    names = [name for name in g.users if name in request.form.getlist('candidates')]
+    names = [email for email in g.users if email in request.form.getlist('candidates')]
     try:
         players = int(request.form.get('players', ''))
         assignment = gameplay.plan_assignment(names, players,
@@ -637,12 +706,97 @@ def admin_assign():
         if game and not game.is_game_done and request.form.get('confirm') != 'yes':
             flash('A game is in progress: tick the confirmation box to change who plays what.', 'error')
             return redirect(url_for('game.admin'))
-    changed = assign_powers(current_app.config['USERS_FILE'], assignment)
+    changed = current_app.config['USER_STORE'].assign_powers(assignment)
     LOGGER.info('Admin %r rewrote powers in the users file for a %d player game: %s (candidates=%s, '
-                'random_select=%s, random_powers=%s, %d lines changed, old file kept as .bak)', g.user.name, players,
+                'random_select=%s, random_powers=%s, %d users changed)', g.user.email, players,
                 assignment, names, request.form.get('random_select'), request.form.get('random_powers'), changed)
-    flash('Powers assigned: %s.' % '; '.join('%s: %s' % (name, ', '.join(power.title() for power in powers))
-                                             for name, powers in assignment.items()), 'ok')
+    flash('Powers assigned: %s.' % '; '.join('%s: %s' % (g.users[email].name, ', '.join(power.title()
+                                                                                        for power in powers))
+                                             for email, powers in assignment.items()), 'ok')
+    return redirect(url_for('game.admin'))
+
+
+def issue_link(email):
+    """ Makes a new set-password link for `email` and keeps it in the admin's session, so that the admin page
+        shows it once. The token itself is never logged. """
+    token, expires = current_app.config['USER_STORE'].issue_link(email, time.time())
+    session['new_link'] = {'email': email, 'url': absolute_url('game.set_password', token=token),
+                           'expires': expires}
+    LOGGER.info('Admin %r issued a set-password link for %r, valid until %s', g.user.email, email,
+                format_time(expires))
+
+
+@bp.route('/admin/users/add', methods=['POST'])
+@admin_required
+def admin_add_user():
+    """ Creates a user (without password) and a link for them to set it. """
+    email, name = normalize_email(request.form.get('email', '')), request.form.get('name', '').strip()
+    is_admin = request.form.get('admin') == 'yes'
+    try:
+        current_app.config['USER_STORE'].create(email, name, is_admin=is_admin, now=time.time())
+    except ValueError as exc:
+        LOGGER.info('Admin %r could not add user %r (name %r): %s', g.user.email, email, name, exc)
+        flash('Cannot add the user: %s' % exc, 'error')
+        return redirect(url_for('game.admin'))
+    LOGGER.info('Admin %r added user %r (name %r, admin=%s)', g.user.email, email, name, is_admin)
+    issue_link(email)
+    flash('User %s added. Send them the link below.' % name, 'ok')
+    return redirect(url_for('game.admin'))
+
+
+@bp.route('/admin/users/link', methods=['POST'])
+@admin_required
+def admin_user_link():
+    """ Issues a new set-password link (first login, forgotten password); the previous link stops working. """
+    email = normalize_email(request.form.get('email', ''))
+    try:
+        issue_link(email)
+    except ValueError as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('game.admin'))
+    flash('New link for %s. Send it to them; the previous link no longer works.' % g.users[email].name, 'ok')
+    return redirect(url_for('game.admin'))
+
+
+@bp.route('/admin/users/admin', methods=['POST'])
+@admin_required
+def admin_user_admin():
+    """ Grants or revokes admin rights. Admins cannot revoke their own (so there is always one left). """
+    email, is_admin = normalize_email(request.form.get('email', '')), request.form.get('admin') == 'yes'
+    if email == g.user.email:
+        LOGGER.warning('Admin %r tried to change their own admin rights', g.user.email)
+        flash('You cannot change your own admin rights.', 'error')
+        return redirect(url_for('game.admin'))
+    try:
+        user = current_app.config['USER_STORE'].set_admin(email, is_admin)
+    except ValueError as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('game.admin'))
+    LOGGER.info('Admin %r set admin=%s for %r', g.user.email, is_admin, email)
+    flash('%s is %s an admin.' % (user.name, 'now' if is_admin else 'no longer'), 'ok')
+    return redirect(url_for('game.admin'))
+
+
+@bp.route('/admin/users/delete', methods=['POST'])
+@admin_required
+def admin_delete_user():
+    """ Deletes a user (their powers are left without a player). Admins cannot delete themselves. """
+    email = normalize_email(request.form.get('email', ''))
+    if email == g.user.email:
+        LOGGER.warning('Admin %r tried to delete themselves', g.user.email)
+        flash('You cannot delete yourself.', 'error')
+        return redirect(url_for('game.admin'))
+    if request.form.get('confirm') != 'yes':
+        flash('Tick the confirmation box to delete a user.', 'error')
+        return redirect(url_for('game.admin'))
+    try:
+        user = current_app.config['USER_STORE'].delete(email)
+    except ValueError as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('game.admin'))
+    LOGGER.info('Admin %r deleted user %r (name %r, powers %s, admin=%s)', g.user.email, user.email, user.name,
+                list(user.powers), user.is_admin)
+    flash('User %s deleted.' % user.name, 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -656,7 +810,7 @@ def admin_process():
             flash('There is no game in progress.', 'error')
         else:
             phase = game.get_current_phase()
-            gameplay.process_phase(game, meta, store, now, 'forced by admin %s' % g.user.name)
+            gameplay.process_phase(game, meta, store, now, 'forced by admin %s' % g.user.email)
             announce_processed(game, meta, [phase] + gameplay.process_if_due(game, meta, g.users, store, now))
     return redirect(url_for('game.admin'))
 
@@ -681,7 +835,7 @@ def admin_deadline():
             previous = meta['deadline']
             meta['deadline'] = now + hours * 3600 if hours else None
             store.save(game, meta)
-            LOGGER.info('Admin %r changed deadline of %s: %s -> %s', g.user.name, game.get_current_phase(),
+            LOGGER.info('Admin %r changed deadline of %s: %s -> %s', g.user.email, game.get_current_phase(),
                         previous, meta['deadline'])
             flash('Deadline updated.', 'ok')
     return redirect(url_for('game.admin'))
@@ -702,7 +856,7 @@ def admin_settings():
         if not game:
             flash('There is no game.', 'error')
         else:
-            LOGGER.info('Admin %r changed phase lengths: %s -> %s', g.user.name, meta['phase_hours'], hours)
+            LOGGER.info('Admin %r changed phase lengths: %s -> %s', g.user.email, meta['phase_hours'], hours)
             meta['phase_hours'] = hours
             store.save(game, meta)
             flash('Phase lengths updated. They apply from the next phase.', 'ok')
@@ -725,7 +879,7 @@ def admin_draw():
             game.draw()
             meta['deadline'] = None
             store.save(game, meta)
-            LOGGER.info('Admin %r ended the game as a draw: outcome=%s', g.user.name, game.outcome)
+            LOGGER.info('Admin %r ended the game as a draw: outcome=%s', g.user.email, game.outcome)
             notify_new_phase(game, meta, ['draw by admin'])
             flash('Game ended as a draw.', 'ok')
     return redirect(url_for('game.index'))

@@ -7,7 +7,7 @@ import time
 
 import http_ece
 
-from webapp.tests.test_app import Browser, app_fixture  # pylint: disable=unused-import
+from webapp.tests.test_app import Browser, app_fixture, write_users  # pylint: disable=unused-import
 from webapp.tests.test_webpush import FakePushService, browser_subscription
 
 
@@ -51,7 +51,7 @@ def test_subscribe_send_test_and_remove_device(app):
     assert app.config['NOTIFIER'].store.all()[0]['last_ok']
 
     # Another user cannot remove bruno's device; bruno can.
-    device = app.config['NOTIFIER'].store.summary()['bruno'][0]['id']
+    device = app.config['NOTIFIER'].store.summary()['bruno@example.com'][0]['id']
     anna = Browser(app, 'anna')
     anna.post('/notifications/remove', device=device)
     assert len(app.config['NOTIFIER'].store.all()) == 1
@@ -84,14 +84,14 @@ def test_same_browser_moves_to_the_user_logged_in(app):
     subscription, _, _ = browser_subscription()
     subscribe(Browser(app, 'bruno'), subscription)
     subscribe(Browser(app, 'anna'), subscription)
-    assert [entry['user'] for entry in app.config['NOTIFIER'].store.all()] == ['anna']
+    assert [entry['user'] for entry in app.config['NOTIFIER'].store.all()] == ['anna@example.com']
 
 
 def test_debug_info_shows_devices_without_endpoints(app):
     subscription, _, _ = browser_subscription()
     subscribe(Browser(app, 'bruno'), subscription)
     info = app.test_client().get('/debug/info?token=debug-secret').get_json()
-    assert info['push']['enabled'] and info['push']['devices']['bruno'][0]['service'].startswith('fcm.googleapis.com#')
+    assert info['push']['enabled'] and info['push']['devices']['bruno@example.com'][0]['service'].startswith('fcm.googleapis.com#')
     text = json.dumps(info)
     assert subscription['endpoint'] not in text and subscription['keys']['auth'] not in text
     log = open(app.config['LOG_FILE'], encoding='utf-8').read()
@@ -175,8 +175,8 @@ def set_deadline(app, seconds_from_now, started_hours_ago=1):
 def test_due_reminders_once_per_threshold_and_not_for_ready_powers():
     from webapp import gameplay
     from webapp.users import User
-    users = {'anna': User('anna', 'x', ('FRANCE',), False), 'bruno': User('bruno', 'x', ('GERMANY',), False),
-             'carla': User('carla', 'x', ('ENGLAND',), False)}
+    users = {name: User(name, name.title(), (power,), False, None, 0, None)
+             for name, power in [('anna', 'FRANCE'), ('bruno', 'GERMANY'), ('carla', 'ENGLAND')]}
     game, meta = gameplay.new_game('anna', 0)
     meta['ready']['ENGLAND'] = True
     meta['submitted']['GERMANY'] = 1
@@ -232,7 +232,7 @@ def test_cron_tick_sends_reminders_and_processes_passed_deadlines(app):
 def test_app_runs_without_cryptography(tmp_path):
     """ If cryptography is missing (forgotten `uv sync`, failed install) the game must still work, just without
         notifications. Runs in a fresh interpreter: this one has already imported it. """
-    (tmp_path / 'users.txt').write_text('anna:pw-anna:FRANCE:admin\n')
+    write_users(tmp_path, 'anna:pw-anna:FRANCE:admin\n')
     script = textwrap.dedent("""
         import sys
         sys.modules['cryptography'] = None      # makes any import of it fail

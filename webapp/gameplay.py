@@ -83,7 +83,7 @@ def plan_assignment(names, players, rng=random, random_select=True, random_power
 
         :param random_select: pick the players at random (else the first ones in `names`).
         :param random_powers: shuffle which player gets which group (else in order).
-        :return: {username: [powers]}
+        :return: {email: [powers]}
     """
     if players not in VARIANTS:
         raise ValueError('Unsupported number of players: %r' % (players,))
@@ -125,18 +125,18 @@ def start_phase_clock(game, meta, now):
 
 
 def players_by_power(game, meta, users):
-    """ Returns {power_name: username} for users assigned to a (non-neutral) power of this game. """
+    """ Returns {power_name: email} for users assigned to a (non-neutral) power of this game. """
     players = {}
     neutral = meta.get('neutral', [])
     for user in users.values():
         for power in user.powers:
             if power in neutral:
-                LOGGER.warning('User %r is assigned to %s, which is neutral in this game: ignored', user.name, power)
+                LOGGER.warning('User %r is assigned to %s, which is neutral in this game: ignored', user.email, power)
             elif game.has_power(power):
-                players[power] = user.name
+                players[power] = user.email
             else:
                 LOGGER.warning('User %r is assigned to %s, which is not a power of map %s',
-                               user.name, power, game.map_name)
+                               user.email, power, game.map_name)
     for power, ally in meta.get('allies', {}).items():
         if ally in players and power not in players:
             players[power] = players[ally]
@@ -242,7 +242,7 @@ def due_reminders(game, meta, users, now, hours):
         itself are skipped, so a short phase does not get a reminder right after it starts; a missed threshold
         (nobody visited the site in time) is not sent late once a smaller one is due.
 
-        :return: {username: {"hours": threshold, "powers": [(power, has submitted orders)]}}
+        :return: {email: {"hours": threshold, "powers": [(power, has submitted orders)]}}
     """
     deadline = meta.get('deadline')
     if game.is_game_done or not deadline or now >= deadline or not hours:
@@ -465,7 +465,8 @@ def power_status(game, meta, users):
             state = 'orders submitted, not ready'
         else:
             state = 'waiting for orders'
-        rows.append({'power': power_name, 'player': players.get(power_name, ''), 'centers': len(power.centers),
+        player = users[players[power_name]].name if power_name in players else ''
+        rows.append({'power': power_name, 'player': player, 'centers': len(power.centers),
                      'units': len(power.units), 'state': state})
     return rows
 

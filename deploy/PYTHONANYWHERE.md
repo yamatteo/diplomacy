@@ -33,14 +33,11 @@ Replace `USER` below with your PythonAnywhere username. On the EU site (eu.pytho
 
 ## Players and first game
 
-1. After the first start, the app creates `~/diplomacy-data/users.txt` with one user, `admin`, and a random password. Open it from the **Files** tab to read the password.
-2. Edit that file to add your friends, one per line: `username:password:POWERS`, plus `:admin` for admins. POWERS is one or more (comma separated, e.g. `FRANCE,AUSTRIA`, for games with fewer than 7 players) of `AUSTRIA`, `ENGLAND`, `FRANCE`, `GERMANY`, `ITALY`, `RUSSIA`, `TURKEY`, or `-` for none. Example:
-   ```
-   matteo:some-password:FRANCE:admin
-   anna:another-password:GERMANY
-   ```
-   Changes apply immediately, no reload needed. Passwords are stored as plain text and cannot contain `:`.
-3. Log in as an admin, open **Admin** and start a new game. Phase lengths and deadlines are set there.
+Upgrading from the old `users.txt`: it is no longer read (the log says so at startup; delete it). Recreate the accounts as below, assign the powers again (tick the confirmation box if a game is in progress), and delete `~/diplomacy-data/subscriptions.json`: its devices belong to the old usernames, so everybody enables notifications again.
+
+1. Create your own admin account: open `https://USER.pythonanywhere.com/debug/admin-link?token=TOKEN&email=YOUR_EMAIL&name=YOUR_NAME` (the debug token from the WSGI file; `name` is what the other players see and defaults to the part of the email before `@`). It answers with a link: open it and choose your password. The same URL is the way back in if you ever lose the admin password (it issues a new link and makes that email an admin).
+2. Add your friends in **Admin** → **Players** → **Add a user** (email and display name). Each new user gets a set-password link, shown once on the admin page: send it to them by email (the "Send it by email" link opens your mail program) or by chat. A link works once, for 7 days. For a forgotten password, click **New link** next to the user and send that. Then give out the countries with **Assign powers**. Accounts are stored in `~/diplomacy-data/users.json` (passwords hashed, never readable); manage them from the admin page, not by editing the file.
+3. Open **Admin** and start a new game. Phase lengths and deadlines are set there.
 4. Deadlines are shown in the `Europe/Rome` time zone; to change it add `os.environ['DIPLOMACY_TIMEZONE'] = 'Europe/London'` to the WSGI file.
 
 There is no background process: a phase is processed when someone opens a page after the deadline has passed, or as soon as all players have marked themselves ready. To process deadlines on time and send reminders even when nobody visits, set up the external scheduler below.
