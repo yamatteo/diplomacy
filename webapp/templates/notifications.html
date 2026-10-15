@@ -1,42 +1,42 @@
 {% extends "base.html" %}
-{% block title %}Notifications · Diplomacy{% endblock %}
+{% block title %}{{ _('Notifications') }} · Diplomacy{% endblock %}
 {% block content %}
-<h1>Notifications</h1>
+<h1>{{ _('Notifications') }}</h1>
 {% if not enabled %}
-  <div class="flash error">Notifications are not available on this server right now. Tell the admin.</div>
+  <div class="flash error">{{ _('Notifications are not available on this server right now. Tell the admin.') }}</div>
 {% else %}
 <div class="card">
   <p style="margin-top: 0">
-    Get a notification on your phone (or computer) when a new phase starts and you have orders to give,
-    and a reminder before the deadline if you have not pressed <em>I'm done</em> yet.
-    Notifications never contain anybody's orders.
+    {{ _("Get a notification on your phone (or computer) when a new phase starts and you have orders to give, "
+         "and a reminder before the deadline if you have not pressed <em>I'm done</em> yet.") }}
+    {{ _("Notifications never contain anybody's orders.") }}
   </p>
-  <h2>This device</h2>
-  <p id="push-state" role="status">Checking…</p>
-  <noscript><p class="error-text">Notifications need JavaScript.</p></noscript>
+  <h2>{{ _('This device') }}</h2>
+  <p id="push-state" role="status">{{ _('Checking…') }}</p>
+  <noscript><p class="error-text">{{ _('Notifications need JavaScript.') }}</p></noscript>
   <div id="push-ios" hidden>
-    <p><strong>On iPhone and iPad</strong> notifications only work once the site is on your home screen:</p>
+    <p>{{ _('<strong>On iPhone and iPad</strong> notifications only work once the site is on your home screen:') }}</p>
     <ol>
-      <li>In Safari, tap the <em>Share</em> button and choose <em>Add to Home Screen</em>.</li>
-      <li>Open Diplomacy from the new icon on your home screen and log in.</li>
-      <li>Come back to this page (it is in the menu at the top) and tap <em>Enable notifications</em>.</li>
+      <li>{{ _('In Safari, tap the <em>Share</em> button and choose <em>Add to Home Screen</em>.') }}</li>
+      <li>{{ _('Open Diplomacy from the new icon on your home screen and log in.') }}</li>
+      <li>{{ _('Come back to this page (it is in the menu at the top) and tap <em>Enable notifications</em>.') }}</li>
     </ol>
-    <p class="muted">This needs iOS 16.4 or later.</p>
+    <p class="muted">{{ _('This needs iOS 16.4 or later.') }}</p>
   </div>
   <p>
-    <button type="button" class="primary" id="push-enable" hidden>Enable notifications</button>
-    <button type="button" id="push-disable" hidden>Disable on this device</button>
+    <button type="button" class="primary" id="push-enable" hidden>{{ _('Enable notifications') }}</button>
+    <button type="button" id="push-disable" hidden>{{ _('Disable on this device') }}</button>
   </p>
   <p class="muted" id="push-denied" hidden>
-    Notifications are blocked for this site. Allow them in your browser's site settings (on Android: tap the icon
-    left of the address, then <em>Permissions</em>; on iPhone: <em>Settings → Notifications → Diplomacy</em>),
-    then reload this page.
+    {{ _("Notifications are blocked for this site. Allow them in your browser's site settings (on Android: tap the "
+         "icon left of the address, then <em>Permissions</em>; on iPhone: <em>Settings → Notifications → "
+         "Diplomacy</em>), then reload this page.") }}
   </p>
 
-  <h2>Your devices</h2>
+  <h2>{{ _('Your devices') }}</h2>
   {% if devices %}
     <div class="table-wrap"><table>
-      <tr><th>Device</th><th>Since</th><th>Last delivered</th><th>Last error</th><th></th></tr>
+      <tr><th>{{ _('Device') }}</th><th>{{ _('Since') }}</th><th>{{ _('Last delivered') }}</th><th>{{ _('Last error') }}</th><th></th></tr>
       {% for device in devices %}
         <tr>
           <td>{{ device.label }} <span class="muted">({{ device.service.split('#')[0] }})</span></td>
@@ -47,7 +47,7 @@
             <form method="post" action="{{ url_for('game.notifications_remove') }}" style="margin: 0">
               <input type="hidden" name="csrf" value="{{ session.csrf }}">
               <input type="hidden" name="device" value="{{ device.id }}">
-              <button>Remove</button>
+              <button>{{ _('Remove') }}</button>
             </form>
           </td>
         </tr>
@@ -55,15 +55,25 @@
     </table></div>
     <form method="post" action="{{ url_for('game.notifications_test') }}">
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
-      <p><button>Send me a test notification</button></p>
+      <p><button>{{ _('Send me a test notification') }}</button></p>
     </form>
   {% else %}
-    <p class="muted">None yet.</p>
+    <p class="muted">{{ _('None yet.') }}</p>
   {% endif %}
 </div>
 <script>
 (function () {
   var KEY = {{ public_key|tojson }}, CSRF = {{ session.csrf|tojson }};
+  var T = {  // texts in the user's language
+    serverError: {{ _('server error')|tojson }},
+    blocked: {{ _('Notifications are blocked on this device.')|tojson }},
+    enabled: {{ _('Notifications are enabled on this device.')|tojson }},
+    disabled: {{ _('Notifications are not enabled on this device.')|tojson }},
+    failed: {{ _('Something went wrong: %(error)s. Reload the page and try again; if it keeps failing, tell the admin.', error='{error}')|tojson }},
+    notYet: {{ _('Not enabled yet.')|tojson }},
+    unsupported: {{ _('This browser does not support notifications. Try Chrome or Firefox (or Safari from the home screen on iPhone).')|tojson }},
+    asking: {{ _('Asking for permission…')|tojson }}
+  };
   var state = document.getElementById('push-state');
   var enable = document.getElementById('push-enable'), disable = document.getElementById('push-disable');
   var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -75,7 +85,7 @@
     var body = new URLSearchParams(fields);
     body.set('csrf', CSRF);
     return fetch(url, {method: 'POST', body: body, credentials: 'same-origin'}).then(function (response) {
-      return response.json().catch(function () { return {ok: false, error: 'server error ' + response.status}; });
+      return response.json().catch(function () { return {ok: false, error: T.serverError + ' ' + response.status}; });
     });
   }
   function keyBytes(text) {
@@ -89,26 +99,25 @@
       document.getElementById('push-denied').hidden = Notification.permission !== 'denied';
       if (Notification.permission === 'denied') {
         enable.hidden = true;
-        show('Notifications are blocked on this device.');
+        show(T.blocked);
       } else if (subscription) {
-        show('Notifications are enabled on this device.');
+        show(T.enabled);
         post('{{ url_for("game.notifications_subscribe") }}', {subscription: JSON.stringify(subscription)});
       } else {
-        show('Notifications are not enabled on this device.');
+        show(T.disabled);
       }
     });
   }
   function fail(error) {
-    show('Something went wrong: ' + (error && (error.message || error.error) || error) +
-         '. Reload the page and try again; if it keeps failing, tell the admin.');
+    show(T.failed.replace('{error}', error && (error.message || error.error) || error));
   }
 
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     if (ios && !standalone) {
-      show('Not enabled yet.');
+      show(T.notYet);
       document.getElementById('push-ios').hidden = false;
     } else {
-      show('This browser does not support notifications. Try Chrome or Firefox (or Safari from the home screen on iPhone).');
+      show(T.unsupported);
     }
     return;
   }
@@ -118,7 +127,7 @@
   }).catch(fail);
 
   enable.addEventListener('click', function () {
-    show('Asking for permission…');
+    show(T.asking);
     Notification.requestPermission().then(function (permission) {
       if (permission !== 'granted') {
         return refresh();

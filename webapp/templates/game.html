@@ -4,40 +4,41 @@
 <h1>{{ phase_title }} <span class="muted">{{ phase }}</span></h1>
 {% if done %}
   <div class="flash info">
-    The game is over.
+    {{ _('The game is over.') }}
     {% if outcome and outcome|length > 1 %}
-      {{ 'Winner' if outcome|length == 2 else 'Draw between' }}: {{ outcome[1:]|map('title')|join(', ') }}.
+      {% set powers = outcome[1:]|map('power_name')|join(', ') %}
+      {{ _('Winner: %(powers)s.', powers=powers) if outcome|length == 2 else _('Draw between: %(powers)s.', powers=powers) }}
     {% endif %}
   </div>
 {% else %}
-  <p><strong>Deadline:</strong> {{ deadline }}</p>
+  <p><strong>{{ _('Deadline:') }}</strong> {{ deadline }}</p>
 {% endif %}
 
 <div class="card map">{{ svg }}</div>
 
 {% if choices %}
 <div class="card">
-  <h2 style="margin-top: 0">Your orders ({{ choices|map(attribute='power')|map('title')|join(', ') }})</h2>
+  <h2 style="margin-top: 0">{{ _('Your orders (%(powers)s)', powers=choices|map(attribute='power')|map('power_name')|join(', ')) }}</h2>
   <p class="muted">
     <span id="orders-summary">{% include "_orders_summary.html" %}</span>
-    <span class="js-only">Each order is saved as soon as you choose it; press <em>I'm done</em> when you have finished.</span>
-    Other players cannot see your orders until the phase is processed; you can change them until then.
-    <a href="{{ url_for('game.help_page') }}#orders">How orders work</a>.
-    Tip: click (or tap) one of your units on the map to choose its order.
+    <span class="js-only">{{ _("Each order is saved as soon as you choose it; press <em>I'm done</em> when you have finished.") }}</span>
+    {{ _('Other players cannot see your orders until the phase is processed; you can change them until then.') }}
+    <a href="{{ url_for('game.help_page') }}#orders">{{ _('How orders work') }}</a>.
+    {{ _('Tip: click (or tap) one of your units on the map to choose its order.') }}
   </p>
   <form method="post" action="{{ url_for('game.orders') }}" id="orders-form">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
     <input type="hidden" name="phase" value="{{ phase }}">
     {% for entry in choices %}
-      {% if choices|length > 1 %}<h3>{{ entry.power|title }}</h3>{% endif %}
+      {% if choices|length > 1 %}<h3>{{ entry.power|power_name }}</h3>{% endif %}
       {% if entry.choices.note %}<p class="muted">{{ entry.choices.note }}</p>{% endif %}
       <div class="orders-grid">
         {% for item in entry.choices['items'] %}
           <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label|seas }}</strong></label>
           <select id="order_{{ item.loc }}" name="order_{{ item.loc }}" data-power="{{ entry.power|lower }}">
-            <option value="">— {{ entry.choices.default }} —</option>
+            <option value="" data-group="{{ entry.choices.default }}">— {{ entry.choices.default|order_group }} —</option>
             {% for group, group_orders in item.groups %}
-              <optgroup label="{{ group }}">
+              <optgroup label="{{ group|order_group }}" data-group="{{ group }}">
                 {% for order in group_orders %}
                   <option value="{{ order }}" {% if order == item.current %}selected{% endif %}>{{ order }}</option>
                 {% endfor %}
@@ -52,12 +53,12 @@
     <div class="nojs-only">
       <label><input type="checkbox" name="ready" value="yes" id="ready-box"
                     {% if my_ready or not my_submitted %}checked{% endif %}>
-        I'm done: process the phase as soon as everybody is ready</label>
-      <button class="primary">Save orders</button>
+        {{ _("I'm done: process the phase as soon as everybody is ready") }}</label>
+      <button class="primary">{{ _('Save orders') }}</button>
     </div>
     <div class="js-only orders-actions">
       <button type="button" id="done-button" class="{{ '' if my_ready else 'primary' }}"
-              data-ready="{{ 'yes' if my_ready else 'no' }}">{{ "I'm not done" if my_ready else "I'm done" }}</button>
+              data-ready="{{ 'yes' if my_ready else 'no' }}">{{ _("I'm not done") if my_ready else _("I'm done") }}</button>
       <span id="autosave-state" class="muted" role="status"></span>
     </div>
   </form>
@@ -68,16 +69,23 @@
 <dialog id="order-dialog" aria-labelledby="od-title"><div class="od-body">
   <div class="od-head">
     <h2 id="od-title"></h2>
-    <button type="button" class="od-close" aria-label="Close">✕</button>
+    <button type="button" class="od-close" aria-label="{{ _('Close') }}">✕</button>
   </div>
   <p class="muted" id="od-current"></p>
   <div class="od-tabs" id="od-tabs"></div>
   <div id="od-list"></div>
-  <p class="muted od-foot">The order you choose is saved right away.</p>
+  <p class="muted od-foot">{{ _('The order you choose is saved right away.') }}</p>
 </div></dialog>
 <script>
 (function () {
   var SEAS = new Set({{ seas|tojson }});
+  var T = {  // texts in the user's language
+    move: {{ 'Move'|order_group|tojson }}, viaConvoy: {{ _('Via convoy')|tojson }},
+    current: {{ _('Current order:')|tojson }}, done: {{ _("I'm done")|tojson }}, notDone: {{ _("I'm not done")|tojson }},
+    saving: {{ _('Saving…')|tojson }}, saved: {{ _('Saved.')|tojson }}, notSaved: {{ _('Not saved:')|tojson }},
+    savedUnready: {{ _('Saved. You changed an order, so you are no longer marked ready.')|tojson }},
+    offline: {{ _('Not saved: connection problem. Change the order again to retry.')|tojson }}
+  };
   var dialog = document.getElementById('order-dialog');
   var form = document.getElementById('orders-form');
   var mapBox = document.querySelector('.card.map');
@@ -120,21 +128,22 @@
   }
 
   // Tabs: Move (with "via convoy" as a second section), Support, Convoy, Retreat...; Hold and Disband are a
-  // single order each, so they are plain buttons that choose directly.
+  // single order each, so they are plain buttons that choose directly. Groups are recognized by their English key
+  // (data-group); their label is in the user's language.
   function groupsOf(sel) {
     var tabs = [], direct = [];
     Array.prototype.forEach.call(sel.querySelectorAll('optgroup'), function (group) {
       var orders = Array.prototype.map.call(group.querySelectorAll('option'), function (o) { return o.value; });
-      var name = group.label;
+      var name = group.dataset.group, label = group.label;
       if ((name === 'Hold' || name === 'Disband') && orders.length === 1) {
-        direct.push({name: name, order: orders[0]});
+        direct.push({name: name, label: label, order: orders[0]});
       } else if (name === 'Move via convoy') {
         var move = tabs.find(function (t) { return t.name === 'Move'; });
-        if (!move) { move = {name: 'Move', sections: []}; tabs.push(move); }
-        move.sections.push({title: 'Via convoy', orders: orders});
+        if (!move) { move = {name: 'Move', label: T.move, sections: []}; tabs.push(move); }
+        move.sections.push({title: T.viaConvoy, orders: orders});
       } else {
         var tab = tabs.find(function (t) { return t.name === name; });
-        if (!tab) { tab = {name: name, sections: []}; tabs.push(tab); }
+        if (!tab) { tab = {name: name, label: label, sections: []}; tabs.push(tab); }
         tab.sections.unshift({title: '', orders: orders});
       }
     });
@@ -168,19 +177,19 @@
     title.textContent = '';
     title.appendChild(orderNode(unit));
     var current = document.getElementById('od-current');
-    current.textContent = 'Current order: ';
+    current.textContent = T.current + ' ';
     current.appendChild(sel.value ? orderNode(sel.value) : document.createTextNode(sel.options[0].text));
     var groups = groupsOf(sel);
     tabsBox.textContent = '';
     listBox.textContent = '';
     groups.direct.forEach(function (d) {
       // No order yet means the default ("— Hold —" or "— Disband —"): show that button as the current one.
-      var isCurrent = d.order === sel.value || (!sel.value && sel.options[0].text.indexOf(d.name) >= 0);
+      var isCurrent = d.order === sel.value || (!sel.value && sel.options[0].dataset.group === d.name);
       tabsBox.appendChild(button('od-direct' + (isCurrent ? ' current' : ''),
-                                 document.createTextNode(d.name), function () { choose(d.order); }));
+                                 document.createTextNode(d.label), function () { choose(d.order); }));
     });
     groups.tabs.forEach(function (tab) {
-      var b = button('od-tab', document.createTextNode(tab.name), function () { showTab(tab, unit); });
+      var b = button('od-tab', document.createTextNode(tab.label), function () { showTab(tab, unit); });
       b.dataset.tab = tab.name;
       tabsBox.appendChild(b);
     });
@@ -224,7 +233,7 @@
 
   function setReady(ready) {
     doneButton.dataset.ready = ready ? 'yes' : 'no';
-    doneButton.textContent = ready ? "I'm not done" : "I'm done";
+    doneButton.textContent = ready ? T.notDone : T.done;
     doneButton.classList.toggle('primary', !ready);
   }
 
@@ -232,7 +241,7 @@
     if (saving) { saveAgain = true; return; }
     saving = true;
     saveAgain = false;
-    showState('Saving…');
+    showState(T.saving);
     var data = new FormData(form);
     data.set('autosave', 'yes');
     data.delete('ready');
@@ -248,7 +257,7 @@
         afterSave = null;
         window.location.reload();
       } else if (!reply.ok) {
-        showState('Not saved: ' + reply.errors.join(' '), true);
+        showState(T.notSaved + ' ' + reply.errors.join(' '), true);
       } else {
         mapBox.innerHTML = reply.svg;
         bindUnits();
@@ -257,10 +266,10 @@
         setReady(reply.ready);
         // "Orders saved ... and marked ready" from the last submit may no longer be true.
         document.querySelectorAll('.flash.ok').forEach(function (f) { f.remove(); });
-        showState(reply.unready ? 'Saved. You changed an order, so you are no longer marked ready.' : 'Saved.');
+        showState(reply.unready ? T.savedUnready : T.saved);
       }
     }).catch(function () {
-      showState('Not saved: connection problem. Change the order again to retry.', true);
+      showState(T.offline, true);
     }).then(function () {
       saving = false;
       if (saveAgain) {
@@ -286,7 +295,7 @@
     }
     if (saving) {
       afterSave = submit;
-      showState('Saving…');
+      showState(T.saving);
     } else {
       submit();
     }
@@ -298,17 +307,17 @@
 })();
 </script>
 {% elif my_powers and not done %}
-<div class="card muted">You have nothing to order in this phase.</div>
+<div class="card muted">{{ _('You have nothing to order in this phase.') }}</div>
 {% endif %}
 
 <div class="card">
-  <h2 style="margin-top: 0">Powers</h2>
+  <h2 style="margin-top: 0">{{ _('Powers') }}</h2>
   <div class="table-wrap" id="status-table">{% include "_status_table.html" %}</div>
 </div>
 
 {% if last_orders %}
 <div class="card">
-  <h2 style="margin-top: 0">Previous phase: <a href="{{ url_for('game.history', phase=last_phase) }}">{{ last_phase }}</a></h2>
+  <h2 style="margin-top: 0">{{ _('Previous phase:') }} <a href="{{ url_for('game.history', phase=last_phase) }}">{{ last_phase }}</a></h2>
   {% with orders = last_orders %}{% include "_orders_table.html" %}{% endwith %}
 </div>
 {% endif %}

@@ -503,7 +503,7 @@ def test_builds_are_limited_and_retreat_phase_is_skipped(app):
     bruno.post('/orders', phase='F1901M', ready='yes')
     # Germany has nothing to build, so only France is awaited in W1901A.
     page = anna.text('/')
-    assert 'Winter 1901, Adjustments' in page and 'You may build up to 2 unit(s)' in page
+    assert 'Winter 1901, Adjustments' in page and 'You may build up to 2 units.' in page
     assert 'nothing to order' in page
     anna.post('/orders', phase='W1901A', order_BRE='F BRE B', order_MAR='A MAR B', order_PAR='A PAR B')
     assert 'Too many orders' in anna.text('/')
@@ -534,7 +534,7 @@ def test_debug_info_reports_game_without_secrets(app):
     info = response.get_json()
     assert info['game']['phase'] == 'S1901M'
     assert {'email': 'bruno@example.com', 'name': 'Bruno', 'powers': ['GERMANY'], 'admin': False,
-            'has_password': True, 'link': 'none', 'link_expires': None} in info['users']
+            'has_password': True, 'link': 'none', 'lang': None, 'link_expires': None} in info['users']
     text = response.get_data(as_text=True)
     assert 'pw-anna' not in text and 'A PAR - BUR' not in text and 'pbkdf2' not in text
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ g.lang }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -78,18 +78,18 @@
   <strong>Diplomacy</strong>
   <nav>
     {% if g.user %}
-      <a href="{{ url_for('game.index') }}">Game</a>
-      <a href="{{ url_for('game.history') }}">History</a>
-      <a href="{{ url_for('game.notifications') }}">Notifications</a>
-      {% if g.user.is_admin %}<a href="{{ url_for('game.admin') }}">Admin</a>{% endif %}
+      <a href="{{ url_for('game.index') }}">{{ _('Game') }}</a>
+      <a href="{{ url_for('game.history') }}">{{ _('History') }}</a>
+      <a href="{{ url_for('game.notifications') }}">{{ _('Notifications') }}</a>
+      {% if g.user.is_admin %}<a href="{{ url_for('game.admin') }}">{{ _('Admin') }}</a>{% endif %}
     {% endif %}
-    <a href="{{ url_for('game.help_page') }}">Help</a>
+    <a href="{{ url_for('game.help_page') }}">{{ _('Help') }}</a>
   </nav>
   {% if g.user %}
-    <span class="muted"><a href="{{ url_for('game.profile') }}">{{ g.user.name }}</a>{% if g.user.powers %} ({{ g.user.powers|map('title')|join(', ') }}){% endif %}</span>
+    <span class="muted"><a href="{{ url_for('game.profile') }}">{{ g.user.name }}</a>{% if g.user.powers %} ({{ g.user.powers|map('power_name')|join(', ') }}){% endif %}</span>
     <form method="post" action="{{ url_for('game.logout') }}">
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
-      <button>Log out</button>
+      <button>{{ _('Log out') }}</button>
     </form>
   {% endif %}
 </header>

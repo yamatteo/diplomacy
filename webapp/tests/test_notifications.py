@@ -67,7 +67,7 @@ def test_expired_devices_are_forgotten_and_bad_subscriptions_rejected(app):
     subscription, _, _ = browser_subscription()
     subscribe(bruno, subscription)
     bruno.post('/notifications/test')
-    assert '1 of 1 device(s) failed (410)' in bruno.text('/notifications')
+    assert '1 of 1 device failed (410)' in bruno.text('/notifications')
     assert app.config['NOTIFIER'].store.all() == []
 
     evil, _, _ = browser_subscription('https://attacker.example.com/collect')

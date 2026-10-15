@@ -77,6 +77,7 @@ def environment_info(config):
         'debug_token_set': bool(config['DEBUG_TOKEN']),
         'cron_token_set': bool(config.get('CRON_TOKEN')),
         'reminder_hours': config.get('REMINDER_HOURS'),
+        'default_language': config.get('LANGUAGE'),
         # Names only: values may be secrets.
         'diplomacy_env_vars': sorted(key for key in os.environ if key.startswith('DIPLOMACY_')),
     }

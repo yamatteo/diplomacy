@@ -6,6 +6,8 @@
     - DIPLOMACY_DEBUG_TOKEN: enables the /debug/* endpoints; pass it as ?token=... or X-Debug-Token header.
     - DIPLOMACY_LOG_LEVEL: root log level (default: DEBUG).
     - DIPLOMACY_TIMEZONE: time zone used to display deadlines (default: Europe/Rome).
+    - DIPLOMACY_LANGUAGE: interface language (en or it) of users who have not chosen one on their profile page
+      (default: en). Anonymous visitors get their browser's language. See webapp/i18n.py.
     - DIPLOMACY_CRON_TOKEN: enables /cron/tick?token=... for an external scheduler (see deploy/PYTHONANYWHERE.md).
     - DIPLOMACY_REMINDER_HOURS: when to remind players who are not done, in hours before the deadline
       (default: 12,2; empty: no reminders).
@@ -31,6 +33,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, g, jsonify, request
 
+from webapp import i18n
 from webapp.diagnostics import REPO_DIR, environment_info
 from webapp.store import GameStore
 from webapp.users import UserStore, normalize_email, users_summary
@@ -124,6 +127,7 @@ def create_app():
         'DEBUG_TOKEN': os.environ.get('DIPLOMACY_DEBUG_TOKEN', ''),
         'USERS_FILE': os.path.join(data_dir, 'users.json'),
         'TIMEZONE': os.environ.get('DIPLOMACY_TIMEZONE', 'Europe/Rome'),
+        'LANGUAGE': os.environ.get('DIPLOMACY_LANGUAGE', i18n.DEFAULT_LANGUAGE).strip().lower(),
         'PUSH_CONTACT': os.environ.get('DIPLOMACY_PUSH_CONTACT', ''),
         'CRON_TOKEN': os.environ.get('DIPLOMACY_CRON_TOKEN', ''),
         'REMINDER_HOURS': (12.0, 2.0),
@@ -147,6 +151,11 @@ def create_app():
     except Exception:   # pylint: disable=broad-except
         LOGGER.error('Unknown DIPLOMACY_TIMEZONE %r: falling back to UTC', config['TIMEZONE'])
         config['TIMEZONE'] = 'UTC'
+
+    if config['LANGUAGE'] not in i18n.LANGUAGES:
+        LOGGER.error('Unknown DIPLOMACY_LANGUAGE %r (known: %s): falling back to %s', config['LANGUAGE'],
+                     ', '.join(i18n.LANGUAGES), i18n.DEFAULT_LANGUAGE)
+        config['LANGUAGE'] = i18n.DEFAULT_LANGUAGE
 
     app = Flask(__name__)
     app.config.update(config)
@@ -214,7 +223,8 @@ def create_app():
             return exc
         LOGGER.error('Unhandled exception on %s %s:\n%s', request.method, request.path, traceback.format_exc())
         request_id = g.get('request_id', '-')
-        return ('Internal error. Report this request id to the admin: %s\n' % request_id, 500,
+        return (i18n.gettext('Internal error. Report this request id to the admin: %(request_id)s',
+                             request_id=request_id) + '\n', 500,
                 {'Content-Type': 'text/plain; charset=utf-8', 'X-Request-ID': request_id})
 
     def require_debug_token():
@@ -246,6 +256,7 @@ def create_app():
         require_debug_token()
         raise RuntimeError('Deliberate test error from /debug/error')
 
+    i18n.install(app)
     from webapp import views    # pylint: disable=import-outside-toplevel
     app.register_blueprint(views.bp)
 

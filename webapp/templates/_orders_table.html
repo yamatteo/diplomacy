@@ -1,14 +1,14 @@
 <div class="table-wrap">
 <table>
-  <tr><th>Power</th><th>Orders</th></tr>
+  <tr><th>{{ _('Power') }}</th><th>{{ _('Orders') }}</th></tr>
   {% for power, rows in orders %}
     <tr>
-      <td>{{ power|title }}</td>
+      <td>{{ power|power_name }}</td>
       <td>
         {% for order, result in rows %}
-          <div>{{ order|seas }}{% if result %} <span class="result">({{ result }})</span>{% endif %}</div>
+          <div>{{ order|seas }}{% if result %} <span class="result">({{ result|map('order_result')|join(', ') }})</span>{% endif %}</div>
         {% else %}
-          <span class="muted">no orders</span>
+          <span class="muted">{{ _('no orders') }}</span>
         {% endfor %}
       </td>
     </tr>

@@ -19,6 +19,8 @@ import re
 import time
 
 from diplomacy import Game
+from webapp import i18n
+from webapp.i18n import gettext as _, ngettext
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,20 +63,21 @@ def check_assignment(players, users):
     groups = [set(group) for group in VARIANTS[players]]
     for group in groups:
         names = {owner.get(power) for power in group}
-        label = '/'.join(power.title() for power in sorted(group))
+        label = '/'.join(i18n.power_name(power) for power in sorted(group))
         if names == {None}:
-            warnings.append('Nobody plays %s.' % label)
+            warnings.append(_('Nobody plays %(powers)s.', powers=label))
         elif len(names) > 1:
-            warnings.append('%s should be played by a single user, but is split between %s.' % (
-                label, ', '.join(sorted(name or 'nobody' for name in names))))
+            warnings.append(_('%(powers)s should be played by a single user, but is split between %(names)s.',
+                              powers=label, names=', '.join(sorted(name or _('nobody') for name in names))))
     for power in neutral_powers(players):
         if power in owner:
-            warnings.append('%s is neutral with %d players, but %s is assigned to it.' % (
-                power.title(), players, owner[power]))
+            warnings.append(_('%(power)s is neutral with %(players)d players, but %(name)s is assigned to it.',
+                              power=i18n.power_name(power), players=players, name=owner[power]))
     for user in users.values():
         if user.powers and set(user.powers) not in groups and set(user.powers) - set(neutral_powers(players)):
-            warnings.append('%s controls %s, which is not a group of the %d player game.' % (
-                user.name, ', '.join(power.title() for power in user.powers), players))
+            warnings.append(_('%(name)s controls %(powers)s, which is not a group of the %(players)d player game.',
+                              name=user.name, powers=', '.join(i18n.power_name(power) for power in user.powers),
+                              players=players))
     return warnings
 
 
@@ -86,9 +89,10 @@ def plan_assignment(names, players, rng=random, random_select=True, random_power
         :return: {email: [powers]}
     """
     if players not in VARIANTS:
-        raise ValueError('Unsupported number of players: %r' % (players,))
+        raise ValueError(_('Unsupported number of players: %(players)s.', players=players))
     if len(names) < players:
-        raise ValueError('%d users available, %d needed.' % (len(names), players))
+        raise ValueError(_('%(available)d users available, %(needed)d needed.', available=len(names),
+                           needed=players))
     chosen = rng.sample(list(names), players) if random_select else list(names)[:players]
     groups = [list(group) for group in VARIANTS[players]]
     if random_powers:
@@ -318,13 +322,14 @@ def order_choices(game, power_name):
     build_count = len(power.centers) - len(power.units)
     note, default, limit = '', 'Hold', None
     if phase_type == 'R':
-        note, default = 'Your dislodged units must retreat or be disbanded.', 'Disband'
+        note, default = _('Your dislodged units must retreat or be disbanded.'), 'Disband'
     elif phase_type == 'A' and build_count > 0:
-        note = 'You may build up to %d unit(s).' % build_count
+        note = ngettext('You may build up to %(num)d unit.', 'You may build up to %(num)d units.', build_count)
         default, limit = 'No build', build_count
     elif phase_type == 'A' and build_count < 0:
-        note = ('You must disband %d unit(s). If you choose fewer, the engine picks the rest for you.'
-                % -build_count)
+        note = ngettext('You must disband %(num)d unit. If you choose none, the engine picks it for you.',
+                        'You must disband %(num)d units. If you choose fewer, the engine picks the rest for you.',
+                        -build_count)
         default, limit = 'Keep', -build_count
 
     items = []
@@ -335,7 +340,7 @@ def order_choices(game, power_name):
                 continue
             groups.setdefault(order_group(order), []).append(order)
         items.append({'loc': loc,
-                      'label': units.get(loc, 'Build at %s' % loc),
+                      'label': units.get(loc) or _('Build at %(loc)s', loc=loc),
                       'current': current.get(loc, ''),
                       'groups': [(name, sorted(groups[name])) for name in ORDER_GROUPS if name in groups]})
     return {'phase_type': phase_type, 'note': note, 'default': default, 'limit': limit, 'items': items}
@@ -354,7 +359,8 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
     phase = game.get_current_phase()
     if power_name in meta.get('neutral', []):
         LOGGER.warning('Orders for neutral %s rejected: chosen=%s', power_name, chosen)
-        return ['%s is neutral in this game and cannot be given orders.' % power_name.title()]
+        return [_('%(power)s is neutral in this game and cannot be given orders.',
+                  power=i18n.power_name(power_name))]
     possible = game.get_all_possible_orders()
     orderable = game.get_orderable_locations(power_name)
     orders, errors = [], []
@@ -362,14 +368,17 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
         if not order:
             continue
         if loc not in orderable or order == 'WAIVE' or order not in possible.get(loc, []):
-            errors.append('"%s" is not a valid order for %s in %s.' % (order, loc, phase))
+            errors.append(_('"%(order)s" is not a valid order for %(loc)s in %(phase)s.', order=order, loc=loc,
+                            phase=phase))
         else:
             orders.append(order)
     limit = order_choices(game, power_name)['limit']
     if limit is not None and len(orders) > limit:
-        errors.append('Too many orders: at most %d in this phase, you gave %d.' % (limit, len(orders)))
+        errors.append(_('Too many orders: at most %(limit)d in this phase, you gave %(given)d.', limit=limit,
+                        given=len(orders)))
     if errors:
-        LOGGER.warning('Rejected orders from %s in %s: chosen=%s errors=%s', power_name, phase, chosen, errors)
+        LOGGER.warning('Rejected orders from %s in %s: chosen=%s errors=%s', power_name, phase, chosen,
+                       [i18n.english(error) for error in errors])
         return errors
 
     previous = game.get_orders(power_name)
@@ -430,14 +439,14 @@ def render_phase(game, phase_data):
 
 
 def phase_orders(game, phase_data):
-    """ Orders and results of a past phase: [(power_name, [(order, result text)])]. """
+    """ Orders and results of a past phase: [(power_name, [(order, [result codes, e.g. 'bounce'])])]. """
     table = []
     for power_name in game.powers:
         rows = []
         for order in phase_data.orders.get(power_name) or []:
             unit = ' '.join(order.split()[:2])
             results = [str(result) for result in phase_data.results.get(unit, []) if str(result)]
-            rows.append((order, ', '.join(results)))
+            rows.append((order, results))
         table.append((power_name, rows))
     return table
 

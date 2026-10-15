@@ -1,26 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Your profile · Diplomacy{% endblock %}
+{% block title %}{{ _('Your profile') }} · Diplomacy{% endblock %}
 {% block content %}
 <div class="card" style="max-width: 26rem; margin: 2rem auto;">
-  <h1>Your profile</h1>
-  <p>Account <strong>{{ g.user.email }}</strong> <span class="muted">(you log in with it; it cannot be changed)</span>.</p>
+  <h1>{{ _('Your profile') }}</h1>
+  <p>{{ _('Account <strong>%(email)s</strong> <span class="muted">(you log in with it; it cannot be changed)</span>.',
+         email=g.user.email) }}</p>
 
-  <h2>Name</h2>
+  <h2>{{ _('Name') }}</h2>
   <form method="post" action="{{ url_for('game.profile_name') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Name shown to the other players <input type="text" name="name" value="{{ g.user.name }}" maxlength="30" required></label>
-    <button>Change name</button>
+    <label>{{ _('Name shown to the other players') }} <input type="text" name="name" value="{{ g.user.name }}" maxlength="30" required></label>
+    <button>{{ _('Change name') }}</button>
   </form>
 
-  <h2>Password</h2>
+  <h2>{{ _('Language') }}</h2>
+  <form method="post" action="{{ url_for('game.profile_lang') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label>{{ _('Language of the site and of your notifications') }}
+      <select name="lang">
+        {% for code, name in languages.items() %}
+          <option value="{{ code }}" lang="{{ code }}" {% if code == current_lang %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select></label>
+    <button>{{ _('Change language') }}</button>
+  </form>
+
+  <h2>{{ _('Password') }}</h2>
   <form method="post" action="{{ url_for('game.profile_password') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
     <input type="email" name="email" value="{{ g.user.email }}" autocomplete="username" hidden readonly>
-    <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
-    <label>New password <input type="password" name="password" autocomplete="new-password" minlength="8" maxlength="200" required></label>
-    <label>Repeat it <input type="password" name="confirm" autocomplete="new-password" minlength="8" maxlength="200" required></label>
-    <button>Change password</button>
+    <label>{{ _('Current password') }} <input type="password" name="current" autocomplete="current-password" required></label>
+    <label>{{ _('New password') }} <input type="password" name="password" autocomplete="new-password" minlength="8" maxlength="200" required></label>
+    <label>{{ _('Repeat it') }} <input type="password" name="confirm" autocomplete="new-password" minlength="8" maxlength="200" required></label>
+    <button>{{ _('Change password') }}</button>
   </form>
-  <p class="muted">Changing the password logs you out on your other devices.</p>
+  <p class="muted">{{ _('Changing the password logs you out on your other devices.') }}</p>
 </div>
 {% endblock %}

@@ -20,7 +20,8 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay, tutorial
+from webapp import gameplay, i18n, tutorial
+from webapp.i18n import gettext as _, ngettext
 from webapp.users import (LINK_DAYS, check_login, link_state, login_failure_reason, normalize_email,
                           password_problem, verify_password)
 
@@ -47,6 +48,8 @@ def load_user():
         g.user = None
         session.pop('user', None)
         session.pop('session_version', None)
+    if g.user:
+        g.lang = i18n.user_lang(g.user, current_app.config['LANGUAGE'])
     if 'csrf' not in session:
         session['csrf'] = secrets.token_urlsafe(16)
     if request.method == 'POST':
@@ -54,7 +57,7 @@ def load_user():
         if not hmac.compare_digest(given.encode(), session['csrf'].encode()):
             LOGGER.warning('CSRF token mismatch on %s (user=%r, ip=%s)', request.path, session.get('user'),
                            g.get('client_ip'))
-            abort(400, 'Form expired or invalid. Go back, reload the page and try again.')
+            abort(400, _('Form expired or invalid. Go back, reload the page and try again.'))
 
 
 def login_required(view):
@@ -97,7 +100,7 @@ def open_game():
 def announce_processed(game, meta, processed):
     """ Tells the user that phases were just processed, and the players by push notification. """
     if processed:
-        flash('Processed: %s.' % ', '.join(processed), 'info')
+        flash(_('Processed: %(phases)s.', phases=', '.join(processed)), 'info')
         notify_new_phase(game, meta, processed)
 
 
@@ -114,32 +117,49 @@ def queue_notification(users, data, topic=None, ttl=None):
         g.setdefault('pending_push', []).append((sorted(users), data, topic, ttl or 7 * 86400))
 
 
+def recipient_lang(email):
+    """ The language to write to a user in (theirs, not the language of whoever triggered the notification). """
+    return i18n.user_lang(g.users.get(email), current_app.config['LANGUAGE'])
+
+
 def notify_new_phase(game, meta, processed):
     """ Tells each player whose powers have orders to give that the current phase started (or everybody that
-        the game is over). Called after `processed` phases were processed. """
+        the game is over), each in their own language. Called after `processed` phases were processed. """
     now = time.time()
     phase = game.get_current_phase()
     players = gameplay.players_by_power(game, meta, g.users)
     url = url_for('game.index')
     if game.is_game_done:
         outcome = game.outcome[1:] if game.outcome and len(game.outcome) > 1 else []
-        body = ('%s: %s.' % ('Winner' if len(outcome) == 1 else 'Draw between', ', '.join(power.title()
-                                                                                       for power in outcome))
-                if outcome else 'See the final position.')
-        queue_notification(set(players.values()), {'title': 'Diplomacy: the game is over', 'body': body,
-                                                   'url': url, 'tag': 'phase'}, topic='phase')
-        LOGGER.info('Queued game over notification after %s to %s', processed, sorted(set(players.values())))
+        by_lang = {}
+        for user in set(players.values()):
+            by_lang.setdefault(recipient_lang(user), []).append(user)
+        for lang, users in sorted(by_lang.items()):
+            with i18n.using(lang):
+                names = ', '.join(i18n.power_name(power) for power in outcome)
+                if not outcome:
+                    body = _('See the final position.')
+                elif len(outcome) == 1:
+                    body = _('Winner: %(powers)s.', powers=names)
+                else:
+                    body = _('Draw between: %(powers)s.', powers=names)
+                queue_notification(users, {'title': _('Diplomacy: the game is over'), 'body': body,
+                                           'url': url, 'tag': 'phase'}, topic='phase')
+        LOGGER.info('Queued game over notification after %s to %s', processed, by_lang)
         return
     by_user = {}
     for power in gameplay.active_powers(game, meta, g.users):
-        by_user.setdefault(players[power], []).append(power.title())
-    deadline = (' Deadline: %s.' % format_time(meta['deadline'])) if meta['deadline'] else ''
+        by_user.setdefault(players[power], []).append(power)
     ttl = min(MAX_PUSH_TTL, max(60, int(meta['deadline'] - now))) if meta['deadline'] else None
     for user, powers in sorted(by_user.items()):
-        queue_notification([user], {'title': 'Diplomacy: %s' % phase_title(phase),
-                                    'body': 'Orders needed for %s.%s' % (', '.join(powers), deadline),
-                                    'url': url, 'tag': 'phase'}, topic='phase', ttl=ttl)
-    LOGGER.info('Queued new phase notifications for %s (after %s) to %s', phase, processed, by_user)
+        with i18n.using(recipient_lang(user)):
+            body = _('Orders needed for %(powers)s.', powers=', '.join(i18n.power_name(power) for power in powers))
+            if meta['deadline']:
+                body += ' ' + _('Deadline: %(time)s.', time=format_time(meta['deadline']))
+            queue_notification([user], {'title': _('Diplomacy: %(phase)s', phase=phase_title(phase)), 'body': body,
+                                        'url': url, 'tag': 'phase'}, topic='phase', ttl=ttl)
+    LOGGER.info('Queued new phase notifications for %s (after %s) to %s (languages %s)', phase, processed, by_user,
+                {user: recipient_lang(user) for user in by_user})
 
 
 def send_due_reminders(game, meta, store, now):
@@ -150,15 +170,18 @@ def send_due_reminders(game, meta, store, now):
     if not reminders:
         return
     store.save(game, meta)                          # records who was reminded, so it is not sent twice
-    left = format_delta(meta['deadline'] - now)
     for user, reminder in sorted(reminders.items()):
-        states = ['%s (%s)' % (power.title(), 'orders saved, but not marked done' if submitted else 'no orders yet')
-                  for power, submitted in reminder['powers']]
-        queue_notification([user], {'title': 'Diplomacy: %s left for %s' % (left, phase_title(meta['phase'])),
-                                    'body': 'Not done yet: %s. Deadline: %s.' % ('; '.join(states),
-                                                                                format_time(meta['deadline'])),
-                                    'url': url_for('game.index'), 'tag': 'phase'},
-                           topic='phase', ttl=max(60, int(meta['deadline'] - now)))
+        with i18n.using(recipient_lang(user)):
+            states = [_('%(power)s (orders saved, but not marked done)', power=i18n.power_name(power)) if submitted
+                      else _('%(power)s (no orders yet)', power=i18n.power_name(power))
+                      for power, submitted in reminder['powers']]
+            queue_notification([user], {'title': _('Diplomacy: %(left)s left for %(phase)s',
+                                                   left=format_delta(meta['deadline'] - now),
+                                                   phase=phase_title(meta['phase'])),
+                                        'body': _('Not done yet: %(states)s. Deadline: %(time)s.',
+                                                  states='; '.join(states), time=format_time(meta['deadline'])),
+                                        'url': url_for('game.index'), 'tag': 'phase'},
+                               topic='phase', ttl=max(60, int(meta['deadline'] - now)))
 
 
 @bp.after_app_request
@@ -185,9 +208,12 @@ def deliver_notifications(response):
 # Formatting helpers
 # ----------------------------------------------------------------------------------------------------------------
 def format_time(timestamp):
-    """ Epoch seconds -> 'Thu 01 Oct 2026, 18:00' in the configured time zone. """
+    """ Epoch seconds -> 'Thu 01 Oct 2026, 18:00' ('gio 01 ott 2026, 18:00') in the configured time zone. Day and
+        month names come from webapp/i18n.py, not from the process locale (setlocale is process-wide). """
     zone = ZoneInfo(current_app.config['TIMEZONE'])
-    return datetime.fromtimestamp(timestamp, timezone.utc).astimezone(zone).strftime('%a %d %b %Y, %H:%M')
+    moment = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(zone)
+    return '%s %02d %s %d, %02d:%02d' % (i18n.day_name(moment.weekday()), moment.day, i18n.month_name(moment.month),
+                                         moment.year, moment.hour, moment.minute)
 
 
 def format_delta(seconds):
@@ -196,10 +222,10 @@ def format_delta(seconds):
     days, rest = divmod(seconds, 86400)
     hours, rest = divmod(rest, 3600)
     if days:
-        return '%d d %d h' % (days, hours)
+        return _('%(days)d d %(hours)d h', days=days, hours=hours)
     if hours:
-        return '%d h %d min' % (hours, rest // 60)
-    return '%d min' % (rest // 60)
+        return _('%(hours)d h %(minutes)d min', hours=hours, minutes=rest // 60)
+    return _('%(minutes)d min', minutes=rest // 60)
 
 
 @bp.app_template_filter('seas')
@@ -213,17 +239,50 @@ def mark_seas(text):
 def deadline_text(meta, now):
     """ Human description of the current deadline. """
     if not meta['deadline']:
-        return 'No deadline: the phase is processed when all players are ready.'
-    return '%s (%s), in %s. Processed earlier if all players are ready.' % (
-        format_time(meta['deadline']), current_app.config['TIMEZONE'], format_delta(meta['deadline'] - now))
+        return _('No deadline: the phase is processed when all players are ready.')
+    return _('%(time)s (%(zone)s), in %(left)s. Processed earlier if all players are ready.',
+             time=format_time(meta['deadline']), zone=current_app.config['TIMEZONE'],
+             left=format_delta(meta['deadline'] - now))
 
 
 def phase_title(phase):
-    """ 'S1901M' -> 'Spring 1901, Movement'. """
-    seasons = {'S': 'Spring', 'F': 'Fall', 'W': 'Winter'}
+    """ 'S1901M' -> 'Spring 1901, Movement' ('Primavera 1901, Movimento'). """
+    seasons = {'S': _('Spring'), 'F': _('Fall'), 'W': _('Winter')}
     if len(phase) == 6 and phase[0] in seasons and phase[-1] in gameplay.PHASE_TYPE_NAMES:
-        return '%s %s, %s' % (seasons[phase[0]], phase[1:5], gameplay.PHASE_TYPE_NAMES[phase[-1]])
+        return _('%(season)s %(year)s, %(type)s', season=seasons[phase[0]], year=phase[1:5],
+                 type=phase_type_label(phase[-1]))
     return phase.title()
+
+
+# The game's own words (gameplay and the engine use these English keys) shown in the user's language.
+def phase_type_label(kind):
+    """ 'M' -> 'Movement'. """
+    return {'M': _('Movement'), 'R': _('Retreats'), 'A': _('Adjustments')}.get(kind, kind)
+
+
+@bp.app_template_filter('order_group')
+def order_group_label(group):
+    """ An order group of `gameplay.order_group` (or the default of `gameplay.order_choices`) -> its name. """
+    return {'Hold': _('Hold'), 'Move': _('Move'), 'Move via convoy': _('Move via convoy'), 'Support': _('Support'),
+            'Convoy': _('Convoy'), 'Retreat': _('Retreat'), 'Build': _('Build'), 'Disband': _('Disband'),
+            'No build': _('No build'), 'Keep': _('Keep')}.get(group, group)
+
+
+@bp.app_template_filter('power_state')
+def power_state_label(state):
+    """ A state of `gameplay.power_status` -> its description. """
+    return {'eliminated': _('eliminated'), 'neutral (units hold)': _('neutral (units hold)'),
+            'no player (units hold)': _('no player (units hold)'), 'nothing to order': _('nothing to order'),
+            'ready': _('ready'), 'orders submitted, not ready': _('orders submitted, not ready'),
+            'waiting for orders': _('waiting for orders')}.get(state, state)
+
+
+@bp.app_template_filter('order_result')
+def order_result_label(result):
+    """ An engine order result code ('bounce', 'cut', ...) -> its name. """
+    return {'no convoy': _('no convoy'), 'bounce': _('bounce'), 'void': _('void'), 'cut': _('cut'),
+            'dislodged': _('dislodged'), 'disrupted': _('disrupted'), 'disband': _('disband'),
+            'maybe': _('maybe')}.get(result, result)
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -242,7 +301,7 @@ def login():
             return redirect(url_for('game.index'))
         LOGGER.warning('Failed login: email=%r reason=%s ip=%s', email, login_failure_reason(g.users, email),
                        g.client_ip)
-        flash('Wrong email or password.', 'error')
+        flash(_('Wrong email or password.'), 'error')
     return render_template('login.html')
 
 
@@ -273,7 +332,7 @@ def set_password():
         password = request.form.get('password', '')
         error = password_problem(password, request.form.get('confirm', ''))
         if error:
-            LOGGER.info('Set-password for %r refused: %s', user.email, error)
+            LOGGER.info('Set-password for %r refused: %s', user.email, i18n.english(error))
             flash(error, 'error')
             response = Response(render_template('set_password.html', user=user, token=token))
         else:
@@ -284,8 +343,12 @@ def set_password():
             else:
                 LOGGER.info('Password set with a link: user=%r session_version=%d (older sessions logged out), '
                             'ip=%s', user.email, user.session_version, g.client_ip)
+                if not user.lang:
+                    user = store.set_lang(user.email, g.lang)
+                    LOGGER.info('Language of %r set to %s, the language the set-password page was shown in',
+                                user.email, user.lang)
                 log_in(user)
-                flash('Password saved. You are logged in.', 'ok')
+                flash(_('Password saved. You are logged in.'), 'ok')
                 response = redirect(url_for('game.index'))
     else:
         response = Response(render_template('set_password.html', user=user, token=token))
@@ -297,8 +360,9 @@ def set_password():
 @bp.route('/profile')
 @login_required
 def profile():
-    """ The user's own account: change the display name or the password. """
-    return render_template('profile.html')
+    """ The user's own account: change the display name, the language or the password. """
+    return render_template('profile.html', languages=i18n.LANGUAGE_NAMES,
+                           current_lang=i18n.user_lang(g.user, current_app.config['LANGUAGE']))
 
 
 @bp.route('/profile/name', methods=['POST'])
@@ -309,11 +373,28 @@ def profile_name():
     try:
         current_app.config['USER_STORE'].set_name(g.user.email, new)
     except ValueError as exc:
-        LOGGER.info('Name change of %r to %r refused: %s', g.user.email, new, exc)
-        flash('Name not changed: %s' % exc, 'error')
+        LOGGER.info('Name change of %r to %r refused: %s', g.user.email, new, i18n.english(exc))
+        flash(_('Name not changed: %(error)s', error=exc), 'error')
         return redirect(url_for('game.profile'))
     LOGGER.info('User %r changed their name: %r -> %r', g.user.email, old, new)
-    flash('Name changed to %s.' % new, 'ok')
+    flash(_('Name changed to %(name)s.', name=new), 'ok')
+    return redirect(url_for('game.profile'))
+
+
+@bp.route('/profile/lang', methods=['POST'])
+@login_required
+def profile_lang():
+    """ Changes the user's interface language (also used for their push notifications). """
+    old, new = g.user.lang, request.form.get('lang', '')
+    try:
+        current_app.config['USER_STORE'].set_lang(g.user.email, new)
+    except ValueError as exc:
+        LOGGER.info('Language change of %r to %r refused: %s', g.user.email, new, i18n.english(exc))
+        flash(_('Language not changed: %(error)s', error=exc), 'error')
+        return redirect(url_for('game.profile'))
+    LOGGER.info('User %r changed their language: %s -> %s', g.user.email, old, new)
+    with i18n.using(new):
+        flash(_('Language changed to %(language)s.', language=i18n.LANGUAGE_NAMES[new]), 'ok')
     return redirect(url_for('game.profile'))
 
 
@@ -324,19 +405,19 @@ def profile_password():
         this one stays logged in. """
     if not verify_password(request.form.get('current', ''), g.user.password):
         LOGGER.warning('Password change of %r refused: wrong current password (ip=%s)', g.user.email, g.client_ip)
-        flash('Password not changed: the current password is wrong.', 'error')
+        flash(_('Password not changed: the current password is wrong.'), 'error')
         return redirect(url_for('game.profile'))
     password = request.form.get('password', '')
     error = password_problem(password, request.form.get('confirm', ''))
     if error:
-        LOGGER.info('Password change of %r refused: %s', g.user.email, error)
-        flash('Password not changed: %s' % error, 'error')
+        LOGGER.info('Password change of %r refused: %s', g.user.email, i18n.english(error))
+        flash(_('Password not changed: %(error)s', error=error), 'error')
         return redirect(url_for('game.profile'))
     user = current_app.config['USER_STORE'].set_password(g.user.email, password)
     session['session_version'] = user.session_version       # keeps this session; older ones are logged out
     LOGGER.info('User %r changed their password: session_version=%d (other sessions logged out), ip=%s',
                 user.email, user.session_version, g.client_ip)
-    flash('Password changed. Your other devices have to log in again.', 'ok')
+    flash(_('Password changed. Your other devices have to log in again.'), 'ok')
     return redirect(url_for('game.profile'))
 
 
@@ -356,7 +437,7 @@ def logout():
 def index():
     """ The game page: map, status of every power, and the orders form for the user's power(s). """
     now = time.time()
-    with open_game() as (game, meta, _):
+    with open_game() as (game, meta, _store):
         if not game:
             return render_template('nogame.html')
         my_powers = gameplay.powers_of(game, meta, g.user)
@@ -409,7 +490,7 @@ def orders():
 
     with open_game() as (game, meta, store):
         if not game or game.is_game_done:
-            return fail(['There is no game in progress.'], reload=True)
+            return fail([_('There is no game in progress.')], reload=True)
         powers = gameplay.powers_of(game, meta, g.user)
         if not powers:
             LOGGER.warning('User %r without a playable power tried to submit orders', g.user.email)
@@ -419,8 +500,8 @@ def orders():
             # The phase was processed between showing the form and submitting it.
             LOGGER.warning('Stale orders from %s: form phase=%r current phase=%s', powers,
                            request.form.get('phase'), phase)
-            return fail(['The game moved on to %s before your orders arrived: they were NOT recorded. '
-                         'Please enter orders for the new phase.' % phase], reload=True)
+            return fail([_('The game moved on to %(phase)s before your orders arrived: they were NOT recorded. '
+                           'Please enter orders for the new phase.', phase=phase)], reload=True)
         chosen = {key[len('order_'):]: value.strip() for key, value in request.form.items()
                   if key.startswith('order_')}
         # One form can carry the orders of all the user's powers: split them by the power owning each location.
@@ -430,7 +511,7 @@ def orders():
         if foreign:
             LOGGER.warning('User %r (powers %s) sent orders for locations that are not theirs: %s',
                            g.user.email, powers, foreign)
-            return fail(['You cannot give orders for %s.' % ', '.join(sorted(foreign))])
+            return fail([_('You cannot give orders for %(locations)s.', locations=', '.join(sorted(foreign)))])
         for loc, order in chosen.items():
             if loc in owner:
                 by_power[owner[loc]][loc] = order
@@ -455,8 +536,9 @@ def orders():
             return jsonify(ok=True, ready=state['my_ready'], unready=bool(unready), svg=str(state['svg']),
                            summary=render_template('_orders_summary.html', **state),
                            status=render_template('_status_table.html', **state))
-        flash('Orders saved for %s%s.' % (phase, ' and marked ready' if ready else
-                                          ' (not marked ready: the phase waits for you until the deadline)'), 'ok')
+        flash(_('Orders saved for %(phase)s and marked ready.', phase=phase) if ready else
+              _('Orders saved for %(phase)s (not marked ready: the phase waits for you until the deadline).',
+                phase=phase), 'ok')
         announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, now))
     return redirect(url_for('game.index'))
 
@@ -466,7 +548,7 @@ def orders():
 @login_required
 def history(phase=None):
     """ Map and orders of a past phase. """
-    with open_game() as (game, _, _):
+    with open_game() as (game, _meta, _store):
         if not game:
             return redirect(url_for('game.index'))
         phases = game.get_phase_history()
@@ -529,7 +611,7 @@ def cron_tick():
                        else 'wrong')
         abort(404)
     now = time.time()
-    with open_game() as (game, meta, _):
+    with open_game() as (game, meta, _store):
         if not game:
             return jsonify(game=None)
         return jsonify(phase=game.get_current_phase(), done=game.is_game_done,
@@ -588,8 +670,8 @@ def device_label(agent):
                                               ('Linux|X11', 'Linux')] if re.search(pattern, agent)), '')
     browser = next((name for pattern, name in [('Edg/', 'Edge'), ('Firefox/|FxiOS/', 'Firefox'),
                                                ('Chrome/|CriOS/', 'Chrome'), ('Safari/', 'Safari')]
-                    if re.search(pattern, agent)), 'Browser')
-    return '%s on %s' % (browser, system) if system else browser
+                    if re.search(pattern, agent)), _('Browser'))
+    return _('%(browser)s on %(system)s', browser=browser, system=system) if system else browser
 
 
 @bp.route('/notifications')
@@ -604,8 +686,8 @@ def notifications():
         error = device['last_error']
         devices.append(dict(device, label=device_label(device['agent']),
                             created=format_time(device['created_at']) if device['created_at'] else '',
-                            last_ok=format_time(device['last_ok']) if device['last_ok'] else 'never',
-                            error='%s (%s)' % (format_time(error['at']), error['status'] or 'unreachable')
+                            last_ok=format_time(device['last_ok']) if device['last_ok'] else _('never'),
+                            error='%s (%s)' % (format_time(error['at']), error['status'] or _('unreachable'))
                                   if error else ''))
     return render_template('notifications.html', enabled=bool(notifier),
                            public_key=notifier.public_key if notifier else '', devices=devices)
@@ -626,7 +708,7 @@ def notifications_subscribe():
     error = webpush.check_subscription(subscription)
     if error:
         LOGGER.warning('Rejected push subscription from %r: %s', g.user.email, error)
-        return jsonify(ok=False, error='This browser sent an unusable subscription: %s.' % error), 400
+        return jsonify(ok=False, error=_('This browser sent an unusable subscription: %(error)s.', error=error)), 400
     agent = request.headers.get('User-Agent', '')
     is_new = notifier.store.add(g.user.email, subscription, agent, time.time())
     LOGGER.log(logging.INFO if is_new else logging.DEBUG, 'Push subscription %s %s for %r (%s)',
@@ -648,7 +730,7 @@ def notifications_remove():
     LOGGER.info('Push device %s of %r removed by the user: %s', device, g.user.email, removed)
     if endpoint:
         return jsonify(ok=True, removed=removed)
-    flash('Device removed: it will not get notifications any more.' if removed else 'Device not found.',
+    flash(_('Device removed: it will not get notifications any more.') if removed else _('Device not found.'),
           'ok' if removed else 'error')
     return redirect(url_for('game.notifications'))
 
@@ -658,19 +740,24 @@ def notifications_remove():
 def notifications_test():
     """ Sends a test notification to all the user's devices right away and reports the outcome. """
     notifier = notifier_or_404()
-    results = notifier.send([g.user.email], {'title': 'Diplomacy', 'body': 'Test: notifications work on this device.',
+    results = notifier.send([g.user.email], {'title': 'Diplomacy',
+                                            'body': _('Test: notifications work on this device.'),
                                             'url': url_for('game.notifications'), 'tag': 'test'},
                             push_site_url(), ttl=600)[g.user.email]
     if not results:
-        flash('You have not enabled notifications on any device yet.', 'error')
+        flash(_('You have not enabled notifications on any device yet.'), 'error')
     elif all(result.ok for result in results):
-        flash('Test notification sent to %d device(s). It should appear within a few seconds.' % len(results), 'ok')
+        flash(ngettext('Test notification sent to %(num)d device. It should appear within a few seconds.',
+                       'Test notification sent to %(num)d devices. It should appear within a few seconds.',
+                       len(results)), 'ok')
     else:
         failed = [result for result in results if not result.ok]
-        flash('Test notification: %d of %d device(s) failed (%s). Devices that no longer exist were removed; '
-              'if the others keep failing, tell the admin.' % (
-                  len(failed), len(results), ', '.join(str(result.status or 'unreachable') for result in failed)),
-              'error')
+        flash(ngettext('Test notification: %(failed)d of %(num)d device failed (%(errors)s). Devices that no longer '
+                       'exist were removed; if the others keep failing, tell the admin.',
+                       'Test notification: %(failed)d of %(num)d devices failed (%(errors)s). Devices that no longer '
+                       'exist were removed; if the others keep failing, tell the admin.',
+                       len(results), failed=len(failed),
+                       errors=', '.join(str(result.status or _('unreachable')) for result in failed)), 'error')
     return redirect(url_for('game.notifications'))
 
 
@@ -686,12 +773,13 @@ def admin():
     if new_link:
         new_link['expires_text'] = format_time(new_link['expires'])
         new_link['mailto'] = 'mailto:%s?%s' % (new_link['email'], urllib.parse.urlencode({
-            'subject': 'Diplomacy: set your password',
-            'body': 'Open this link to set your password for our Diplomacy game (it works once, until %s):\n\n%s\n'
-                    % (new_link['expires_text'], new_link['url'])}, quote_via=urllib.parse.quote))
+            'subject': _('Diplomacy: set your password'),
+            'body': _('Open this link to set your password for our Diplomacy game (it works once, until '
+                      '%(expires)s):\n\n%(url)s\n', expires=new_link['expires_text'], url=new_link['url'])},
+            quote_via=urllib.parse.quote))
     users = [dict(user._asdict(), link_state=link_state(user, now),
                   link_expires=format_time(user.link['expires']) if user.link else '') for user in g.users.values()]
-    with open_game() as (game, meta, _):
+    with open_game() as (game, meta, _store):
         context = {'has_game': bool(game), 'users': users, 'new_link': new_link, 'link_days': LINK_DAYS,
                    'variants': {count: {'groups': groups, 'neutral': gameplay.neutral_powers(count),
                                         'warnings': gameplay.check_assignment(count, g.users)}
@@ -699,7 +787,8 @@ def admin():
                    'default_players': gameplay.MAX_PLAYERS}
         if game:
             context.update(phase=game.get_current_phase(), done=game.is_game_done, deadline=deadline_text(meta, now),
-                           phase_hours=meta['phase_hours'], phase_names=gameplay.PHASE_TYPE_NAMES,
+                           phase_hours=meta['phase_hours'],
+                           phase_names={kind: phase_type_label(kind) for kind in gameplay.PHASE_TYPE_NAMES},
                            neutral=meta.get('neutral', []), players=meta.get('players'))
     return render_template('admin.html', **context)
 
@@ -709,15 +798,15 @@ def admin():
 def admin_new_game():
     """ Starts a new game, archiving the current one. """
     if request.form.get('confirm') != 'yes':
-        flash('Tick the confirmation box to start a new game.', 'error')
+        flash(_('Tick the confirmation box to start a new game.'), 'error')
         return redirect(url_for('game.admin'))
     try:
         players = int(request.form.get('players') or gameplay.MAX_PLAYERS)
         if players not in gameplay.VARIANTS:
             raise ValueError(players)
     except ValueError:
-        flash('The number of players must be between %d and %d.' % (gameplay.MIN_PLAYERS, gameplay.MAX_PLAYERS),
-              'error')
+        flash(_('The number of players must be between %(min)d and %(max)d.', min=gameplay.MIN_PLAYERS,
+                max=gameplay.MAX_PLAYERS), 'error')
         return redirect(url_for('game.admin'))
     now = time.time()
     store = current_app.config['GAME_STORE']
@@ -727,10 +816,11 @@ def admin_new_game():
         store.save(game, meta)
     warnings = gameplay.check_assignment(players, g.users)
     LOGGER.info('Admin %r started a new %d player game (previous archived to %s). users=%s warnings=%s',
-                g.user.email, players, archived, {user.email: list(user.powers) for user in g.users.values()}, warnings)
-    flash('New game started for %d players.' % players, 'ok')
+                g.user.email, players, archived, {user.email: list(user.powers) for user in g.users.values()},
+                [i18n.english(warning) for warning in warnings])
+    flash(_('New game started for %(players)d players.', players=players), 'ok')
     for warning in warnings:
-        flash('Check users file: %s' % warning, 'error')
+        flash(_('Check users file: %(warning)s', warning=warning), 'error')
     return redirect(url_for('game.index'))
 
 
@@ -746,19 +836,19 @@ def admin_assign():
                                               random_select=request.form.get('random_select') == 'yes',
                                               random_powers=request.form.get('random_powers') == 'yes')
     except ValueError as exc:
-        flash('Cannot assign powers: %s' % exc, 'error')
+        flash(_('Cannot assign powers: %(error)s', error=exc), 'error')
         return redirect(url_for('game.admin'))
-    with open_game() as (game, meta, _):
+    with open_game() as (game, meta, _store):
         if game and not game.is_game_done and request.form.get('confirm') != 'yes':
-            flash('A game is in progress: tick the confirmation box to change who plays what.', 'error')
+            flash(_('A game is in progress: tick the confirmation box to change who plays what.'), 'error')
             return redirect(url_for('game.admin'))
     changed = current_app.config['USER_STORE'].assign_powers(assignment)
     LOGGER.info('Admin %r rewrote powers in the users file for a %d player game: %s (candidates=%s, '
                 'random_select=%s, random_powers=%s, %d users changed)', g.user.email, players,
                 assignment, names, request.form.get('random_select'), request.form.get('random_powers'), changed)
-    flash('Powers assigned: %s.' % '; '.join('%s: %s' % (g.users[email].name, ', '.join(power.title()
-                                                                                        for power in powers))
-                                             for email, powers in assignment.items()), 'ok')
+    flash(_('Powers assigned: %(assignment)s.', assignment='; '.join(
+        '%s: %s' % (g.users[email].name, ', '.join(i18n.power_name(power) for power in powers))
+        for email, powers in assignment.items())), 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -769,7 +859,7 @@ def issue_link(email):
     session['new_link'] = {'email': email, 'url': absolute_url('game.set_password', token=token),
                            'expires': expires}
     LOGGER.info('Admin %r issued a set-password link for %r, valid until %s', g.user.email, email,
-                format_time(expires))
+                time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(expires)))
 
 
 @bp.route('/admin/users/add', methods=['POST'])
@@ -781,12 +871,12 @@ def admin_add_user():
     try:
         current_app.config['USER_STORE'].create(email, name, is_admin=is_admin, now=time.time())
     except ValueError as exc:
-        LOGGER.info('Admin %r could not add user %r (name %r): %s', g.user.email, email, name, exc)
-        flash('Cannot add the user: %s' % exc, 'error')
+        LOGGER.info('Admin %r could not add user %r (name %r): %s', g.user.email, email, name, i18n.english(exc))
+        flash(_('Cannot add the user: %(error)s', error=exc), 'error')
         return redirect(url_for('game.admin'))
     LOGGER.info('Admin %r added user %r (name %r, admin=%s)', g.user.email, email, name, is_admin)
     issue_link(email)
-    flash('User %s added. Send them the link below.' % name, 'ok')
+    flash(_('User %(name)s added. Send them the link below.', name=name), 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -800,7 +890,8 @@ def admin_user_link():
     except ValueError as exc:
         flash(str(exc), 'error')
         return redirect(url_for('game.admin'))
-    flash('New link for %s. Send it to them; the previous link no longer works.' % g.users[email].name, 'ok')
+    flash(_('New link for %(name)s. Send it to them; the previous link no longer works.', name=g.users[email].name),
+          'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -811,7 +902,7 @@ def admin_user_admin():
     email, is_admin = normalize_email(request.form.get('email', '')), request.form.get('admin') == 'yes'
     if email == g.user.email:
         LOGGER.warning('Admin %r tried to change their own admin rights', g.user.email)
-        flash('You cannot change your own admin rights.', 'error')
+        flash(_('You cannot change your own admin rights.'), 'error')
         return redirect(url_for('game.admin'))
     try:
         user = current_app.config['USER_STORE'].set_admin(email, is_admin)
@@ -819,7 +910,8 @@ def admin_user_admin():
         flash(str(exc), 'error')
         return redirect(url_for('game.admin'))
     LOGGER.info('Admin %r set admin=%s for %r', g.user.email, is_admin, email)
-    flash('%s is %s an admin.' % (user.name, 'now' if is_admin else 'no longer'), 'ok')
+    flash(_('%(name)s is now an admin.', name=user.name) if is_admin else
+          _('%(name)s is no longer an admin.', name=user.name), 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -830,10 +922,10 @@ def admin_delete_user():
     email = normalize_email(request.form.get('email', ''))
     if email == g.user.email:
         LOGGER.warning('Admin %r tried to delete themselves', g.user.email)
-        flash('You cannot delete yourself.', 'error')
+        flash(_('You cannot delete yourself.'), 'error')
         return redirect(url_for('game.admin'))
     if request.form.get('confirm') != 'yes':
-        flash('Tick the confirmation box to delete a user.', 'error')
+        flash(_('Tick the confirmation box to delete a user.'), 'error')
         return redirect(url_for('game.admin'))
     try:
         user = current_app.config['USER_STORE'].delete(email)
@@ -842,7 +934,7 @@ def admin_delete_user():
         return redirect(url_for('game.admin'))
     LOGGER.info('Admin %r deleted user %r (name %r, powers %s, admin=%s)', g.user.email, user.email, user.name,
                 list(user.powers), user.is_admin)
-    flash('User %s deleted.' % user.name, 'ok')
+    flash(_('User %(name)s deleted.', name=user.name), 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -853,7 +945,7 @@ def admin_process():
     now = time.time()
     with open_game() as (game, meta, store):
         if not game or game.is_game_done:
-            flash('There is no game in progress.', 'error')
+            flash(_('There is no game in progress.'), 'error')
         else:
             phase = game.get_current_phase()
             gameplay.process_phase(game, meta, store, now, 'forced by admin %s' % g.user.email)
@@ -872,18 +964,18 @@ def admin_deadline():
         if hours is not None and not 0 < hours <= 24 * 60:
             raise ValueError('out of range')
     except ValueError:
-        flash('Hours must be a number between 0 and 1440, or empty for no deadline.', 'error')
+        flash(_('Hours must be a number between 0 and 1440, or empty for no deadline.'), 'error')
         return redirect(url_for('game.admin'))
     with open_game() as (game, meta, store):
         if not game or game.is_game_done:
-            flash('There is no game in progress.', 'error')
+            flash(_('There is no game in progress.'), 'error')
         else:
             previous = meta['deadline']
             meta['deadline'] = now + hours * 3600 if hours else None
             store.save(game, meta)
             LOGGER.info('Admin %r changed deadline of %s: %s -> %s', g.user.email, game.get_current_phase(),
                         previous, meta['deadline'])
-            flash('Deadline updated.', 'ok')
+            flash(_('Deadline updated.'), 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -896,16 +988,16 @@ def admin_settings():
         if any(not 0 <= value <= 24 * 60 for value in hours.values()):
             raise ValueError('out of range')
     except ValueError:
-        flash('Phase lengths must be numbers between 0 and 1440 hours.', 'error')
+        flash(_('Phase lengths must be numbers between 0 and 1440 hours.'), 'error')
         return redirect(url_for('game.admin'))
     with open_game() as (game, meta, store):
         if not game:
-            flash('There is no game.', 'error')
+            flash(_('There is no game.'), 'error')
         else:
             LOGGER.info('Admin %r changed phase lengths: %s -> %s', g.user.email, meta['phase_hours'], hours)
             meta['phase_hours'] = hours
             store.save(game, meta)
-            flash('Phase lengths updated. They apply from the next phase.', 'ok')
+            flash(_('Phase lengths updated. They apply from the next phase.'), 'ok')
     return redirect(url_for('game.admin'))
 
 
@@ -914,11 +1006,11 @@ def admin_settings():
 def admin_draw():
     """ Ends the game as a draw between the surviving powers. """
     if request.form.get('confirm') != 'yes':
-        flash('Tick the confirmation box to end the game.', 'error')
+        flash(_('Tick the confirmation box to end the game.'), 'error')
         return redirect(url_for('game.admin'))
     with open_game() as (game, meta, store):
         if not game or game.is_game_done:
-            flash('There is no game in progress.', 'error')
+            flash(_('There is no game in progress.'), 'error')
         else:
             store.save(game, meta)
             store.backup('before_draw_%s' % game.get_current_phase())
@@ -927,5 +1019,5 @@ def admin_draw():
             store.save(game, meta)
             LOGGER.info('Admin %r ended the game as a draw: outcome=%s', g.user.email, game.outcome)
             notify_new_phase(game, meta, ['draw by admin'])
-            flash('Game ended as a draw.', 'ok')
+            flash(_('Game ended as a draw.'), 'ok')
     return redirect(url_for('game.index'))

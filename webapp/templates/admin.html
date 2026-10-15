@@ -1,148 +1,152 @@
 {% extends "base.html" %}
-{% block title %}Admin · Diplomacy{% endblock %}
+{% block title %}{{ _('Admin') }} · Diplomacy{% endblock %}
 {% block content %}
-<h1>Admin</h1>
+<h1>{{ _('Admin') }}</h1>
 
 {% if has_game and not done %}
 <div class="card">
-  <h2 style="margin-top: 0">Current phase: {{ phase }}</h2>
-  <p><strong>Deadline:</strong> {{ deadline }}</p>
+  <h2 style="margin-top: 0">{{ _('Current phase: %(phase)s', phase=phase) }}</h2>
+  <p><strong>{{ _('Deadline:') }}</strong> {{ deadline }}</p>
   <form method="post" action="{{ url_for('game.admin_deadline') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Set the deadline of this phase to
-      <input type="number" name="hours" min="0" max="1440" step="0.5" style="width: 6rem"> hours from now
-      <span class="muted">(leave empty for no deadline)</span></label>
-    <button>Set deadline</button>
+    <label>{{ _('Set the deadline of this phase to') }}
+      <input type="number" name="hours" min="0" max="1440" step="0.5" style="width: 6rem"> {{ _('hours from now') }}
+      <span class="muted">{{ _('(leave empty for no deadline)') }}</span></label>
+    <button>{{ _('Set deadline') }}</button>
   </form>
   <form method="post" action="{{ url_for('game.admin_process') }}" style="margin-top: 1rem">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <button>Process this phase now</button>
-    <span class="muted">with the orders submitted so far; units without orders hold.</span>
+    <button>{{ _('Process this phase now') }}</button>
+    <span class="muted">{{ _('with the orders submitted so far; units without orders hold.') }}</span>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top: 0">Phase lengths</h2>
-  <p class="muted">Hours given to each kind of phase; 0 means no deadline. Applies from the next phase.</p>
+  <h2 style="margin-top: 0">{{ _('Phase lengths') }}</h2>
+  <p class="muted">{{ _('Hours given to each kind of phase; 0 means no deadline. Applies from the next phase.') }}</p>
   <form method="post" action="{{ url_for('game.admin_settings') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
     {% for kind, name in phase_names.items() %}
       <label>{{ name }}
-        <input type="number" name="hours_{{ kind }}" min="0" max="1440" step="0.5" value="{{ phase_hours[kind] }}" style="width: 6rem"> hours</label>
+        <input type="number" name="hours_{{ kind }}" min="0" max="1440" step="0.5" value="{{ phase_hours[kind] }}" style="width: 6rem"> {{ _('hours') }}</label>
     {% endfor %}
-    <button>Save phase lengths</button>
+    <button>{{ _('Save phase lengths') }}</button>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top: 0">End the game</h2>
+  <h2 style="margin-top: 0">{{ _('End the game') }}</h2>
   <form method="post" action="{{ url_for('game.admin_draw') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label><input type="checkbox" name="confirm" value="yes"> End the game now as a draw between the surviving powers</label>
-    <button class="danger">End as a draw</button>
+    <label><input type="checkbox" name="confirm" value="yes"> {{ _('End the game now as a draw between the surviving powers') }}</label>
+    <button class="danger">{{ _('End as a draw') }}</button>
   </form>
 </div>
 {% endif %}
 
 <div class="card">
-  <h2 style="margin-top: 0">New game</h2>
-  <p class="muted">Starts a standard game at Spring 1901, following the rulebook's "Alternate way to play" when
-    there are fewer than seven players. Give each player their countries first (see Assign powers below).
-    {% if has_game %}The current game is moved to the archive folder, not deleted.{% endif %}</p>
+  <h2 style="margin-top: 0">{{ _('New game') }}</h2>
+  <p class="muted">{{ _('Starts a standard game at Spring 1901, following the rulebook\'s "Alternate way to play" when '
+                        'there are fewer than seven players. Give each player their countries first (see Assign powers '
+                        'below).') }}
+    {% if has_game %}{{ _('The current game is moved to the archive folder, not deleted.') }}{% endif %}</p>
   <form method="post" action="{{ url_for('game.admin_new_game') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Number of players
+    <label>{{ _('Number of players') }}
       <select name="players" style="width: auto">
         {% for count in variants %}<option value="{{ count }}" {% if count == default_players %}selected{% endif %}>{{ count }}</option>{% endfor %}
       </select></label>
     <div class="table-wrap">
     <table>
-      <tr><th>Players</th><th>Who controls what</th><th>Neutral (units hold)</th><th>Players check</th></tr>
+      <tr><th>{{ _('Players') }}</th><th>{{ _('Who controls what') }}</th><th>{{ _('Neutral (units hold)') }}</th><th>{{ _('Players check') }}</th></tr>
       {% for count, variant in variants.items() %}
         <tr><td>{{ count }}</td>
-          <td>{% for group in variant.groups %}{{ group|map('title')|join(' + ') }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
-          <td>{{ variant.neutral|map('title')|join(', ') or '—' }}</td>
-          <td>{% if variant.warnings %}{{ variant.warnings|join(' ') }}{% else %}matches{% endif %}</td></tr>
+          <td>{% for group in variant.groups %}{{ group|map('power_name')|join(' + ') }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+          <td>{{ variant.neutral|map('power_name')|join(', ') or '—' }}</td>
+          <td>{% if variant.warnings %}{{ variant.warnings|join(' ') }}{% else %}{{ _('matches') }}{% endif %}</td></tr>
       {% endfor %}
     </table>
     </div>
-    <label><input type="checkbox" name="confirm" value="yes"> Yes, start a new game{% if has_game %} and archive the current one{% endif %}</label>
-    <button class="danger">Start new game</button>
+    <label><input type="checkbox" name="confirm" value="yes"> {{ _('Yes, start a new game and archive the current one') if has_game else _('Yes, start a new game') }}</label>
+    <button class="danger">{{ _('Start new game') }}</button>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top: 0">Players</h2>
+  <h2 style="margin-top: 0">{{ _('Players') }}</h2>
   {% if new_link %}
     <div class="flash info">
-      <p style="margin-top: 0">Set-password link for <strong>{{ new_link.email }}</strong>, shown only now. It works once,
-        until {{ new_link.expires_text }}.</p>
+      <p style="margin-top: 0">{{ _('Set-password link for <strong>%(email)s</strong>, shown only now. It works once, '
+                                    'until %(expires)s.', email=new_link.email, expires=new_link.expires_text) }}</p>
       <input type="text" value="{{ new_link.url }}" readonly onclick="this.select()" style="width: 100%">
-      <p style="margin-bottom: 0"><a href="{{ new_link.mailto }}">Send it by email</a></p>
+      <p style="margin-bottom: 0"><a href="{{ new_link.mailto }}">{{ _('Send it by email') }}</a></p>
     </div>
   {% endif %}
-  <p class="muted">One account per email address. New users get a link to set their password; send it to them
-    (by email or chat). Links work once, for {{ link_days }} days; for a forgotten password, make a new link.
-    Powers without a player give no orders: their units hold.{% if players %} This game was started for {{ players }} players{% if neutral %}; neutral: {{ neutral|map('title')|join(', ') }}{% endif %}.{% endif %}</p>
+  <p class="muted">{{ _('One account per email address. New users get a link to set their password; send it to them '
+                        '(by email or chat). Links work once, for %(days)d days; for a forgotten password, make a new '
+                        'link.', days=link_days) }}
+    {{ _('Powers without a player give no orders: their units hold.') }}
+    {%- if players and neutral %} {{ _('This game was started for %(players)d players; neutral: %(powers)s.', players=players, powers=neutral|map('power_name')|join(', ')) }}
+    {%- elif players %} {{ _('This game was started for %(players)d players.', players=players) }}{% endif %}</p>
   <div class="table-wrap">
   <table>
-    <tr><th>Email</th><th>Name</th><th>Powers</th><th>Admin</th><th>Password</th><th>Actions</th></tr>
+    <tr><th>{{ _('Email') }}</th><th>{{ _('Name') }}</th><th>{{ _('Powers') }}</th><th>{{ _('Admin') }}</th><th>{{ _('Password') }}</th><th>{{ _('Actions') }}</th></tr>
     {% for user in users %}
-      <tr><td>{{ user.email }}</td><td>{{ user.name }}</td><td>{{ user.powers|map('title')|join(', ') or '—' }}</td>
-        <td>{{ 'yes' if user.is_admin else '' }}</td>
-        <td>{% if user.password %}set{% else %}not set{% endif %}{% if user.link_state == 'pending' %}; link pending until {{ user.link_expires }}{% elif user.link_state == 'expired' %}; link expired{% endif %}</td>
+      <tr><td>{{ user.email }}</td><td>{{ user.name }}</td><td>{{ user.powers|map('power_name')|join(', ') or '—' }}</td>
+        <td>{{ _('yes') if user.is_admin else '' }}</td>
+        <td>{% if user.password %}{{ _('set') }}{% else %}{{ _('not set') }}{% endif %}{% if user.link_state == 'pending' %}; {{ _('link pending until %(expires)s', expires=user.link_expires) }}{% elif user.link_state == 'expired' %}; {{ _('link expired') }}{% endif %}</td>
         <td>
           <form method="post" action="{{ url_for('game.admin_user_link') }}" style="display: inline">
             <input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="email" value="{{ user.email }}">
-            <button>New link</button>
+            <button>{{ _('New link') }}</button>
           </form>
           {% if user.email != g.user.email %}
             <form method="post" action="{{ url_for('game.admin_user_admin') }}" style="display: inline">
               <input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="email" value="{{ user.email }}">
               <input type="hidden" name="admin" value="{{ '' if user.is_admin else 'yes' }}">
-              <button>{{ 'Remove admin' if user.is_admin else 'Make admin' }}</button>
+              <button>{{ _('Remove admin') if user.is_admin else _('Make admin') }}</button>
             </form>
             <form method="post" action="{{ url_for('game.admin_delete_user') }}" style="display: inline">
               <input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="email" value="{{ user.email }}">
-              <label style="display: inline"><input type="checkbox" name="confirm" value="yes"> sure</label>
-              <button class="danger">Delete</button>
+              <label style="display: inline"><input type="checkbox" name="confirm" value="yes"> {{ _('sure') }}</label>
+              <button class="danger">{{ _('Delete') }}</button>
             </form>
           {% endif %}
         </td></tr>
     {% endfor %}
   </table>
   </div>
-  <h3>Add a user</h3>
+  <h3>{{ _('Add a user') }}</h3>
   <form method="post" action="{{ url_for('game.admin_add_user') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Email <input type="email" name="email" required></label>
-    <label>Name shown to the other players <input type="text" name="name" maxlength="30" required></label>
-    <label><input type="checkbox" name="admin" value="yes"> Admin (can start games, manage users, force processing)</label>
-    <button>Add user and make a link</button>
+    <label>{{ _('Email') }} <input type="email" name="email" required></label>
+    <label>{{ _('Name shown to the other players') }} <input type="text" name="name" maxlength="30" required></label>
+    <label><input type="checkbox" name="admin" value="yes"> {{ _('Admin (can start games, manage users, force processing)') }}</label>
+    <button>{{ _('Add user and make a link') }}</button>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top: 0">Assign powers</h2>
-  <p class="muted">Gives the users their powers for an N player game, following the rulebook groupings listed under
-    New game. Users who are not ticked, or not picked, get no power. Start the new game afterwards, with the same
-    number of players.</p>
+  <h2 style="margin-top: 0">{{ _('Assign powers') }}</h2>
+  <p class="muted">{{ _('Gives the users their powers for an N player game, following the rulebook groupings listed '
+                        'under New game. Users who are not ticked, or not picked, get no power. Start the new game '
+                        'afterwards, with the same number of players.') }}</p>
   <form method="post" action="{{ url_for('game.admin_assign') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <p style="margin: 0">Who can play:</p>
+    <p style="margin: 0">{{ _('Who can play:') }}</p>
     {% for user in users %}
       <label><input type="checkbox" name="candidates" value="{{ user.email }}" checked> {{ user.name }}</label>
     {% endfor %}
-    <label>Number of players
+    <label>{{ _('Number of players') }}
       <select name="players" style="width: auto">
         {% for count in variants %}<option value="{{ count }}" {% if count == default_players %}selected{% endif %}>{{ count }}</option>{% endfor %}
       </select></label>
-    <label><input type="checkbox" name="random_select" value="yes" checked> Pick the players at random among the ticked users (otherwise the first ones in the list above)</label>
-    <label><input type="checkbox" name="random_powers" value="yes" checked> Shuffle the powers (otherwise in rulebook order)</label>
+    <label><input type="checkbox" name="random_select" value="yes" checked> {{ _('Pick the players at random among the ticked users (otherwise the first ones in the list above)') }}</label>
+    <label><input type="checkbox" name="random_powers" value="yes" checked> {{ _('Shuffle the powers (otherwise in rulebook order)') }}</label>
     {% if has_game and not done %}
-      <label><input type="checkbox" name="confirm" value="yes"> A game is in progress: change who plays what anyway</label>
+      <label><input type="checkbox" name="confirm" value="yes"> {{ _('A game is in progress: change who plays what anyway') }}</label>
     {% endif %}
-    <button>Assign powers</button>
+    <button>{{ _('Assign powers') }}</button>
   </form>
 </div>
 {% endblock %}

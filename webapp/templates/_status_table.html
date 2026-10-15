@@ -1,10 +1,10 @@
 {# The Powers table of the game page; refreshed by the game page's script after each autosave. #}
 <table>
-  <tr><th>Power</th><th>Player</th><th>Centers</th><th>Units</th><th>This phase</th></tr>
+  <tr><th>{{ _('Power') }}</th><th>{{ _('Player') }}</th><th>{{ _('Centers') }}</th><th>{{ _('Units') }}</th><th>{{ _('This phase') }}</th></tr>
   {% for row in status %}
     <tr>
-      <td>{{ row.power|title }}</td><td>{{ row.player or '—' }}</td>
-      <td>{{ row.centers }}</td><td>{{ row.units }}</td><td>{{ row.state }}</td>
+      <td>{{ row.power|power_name }}</td><td>{{ row.player or '—' }}</td>
+      <td>{{ row.centers }}</td><td>{{ row.units }}</td><td>{{ row.state|power_state }}</td>
     </tr>
   {% endfor %}
 </table>

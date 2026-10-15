@@ -21,6 +21,7 @@ os.environ['DIPLOMACY_DATA_DIR'] = os.path.join(HOME, 'diplomacy-data')
 os.environ['DIPLOMACY_DEBUG_TOKEN'] = DEBUG_TOKEN
 os.environ['DIPLOMACY_CRON_TOKEN'] = CRON_TOKEN
 os.environ['DIPLOMACY_PUSH_CONTACT'] = PUSH_CONTACT
+# os.environ['DIPLOMACY_LANGUAGE'] = 'it'   # language of users who have not chosen one (en or it; default en)
 
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)

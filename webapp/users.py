@@ -1,13 +1,15 @@
 """ Players' accounts, kept by the app in ``users.json`` in the data dir (managed from the admin page, not by hand).
 
     One account per email address: ``{"users": [{"email", "name", "powers", "admin", "password",
-    "session_version", "link", "created_at"}]}``.
+    "session_version", "link", "created_at", "lang"}]}``.
 
     - ``email`` is the account's id: stored lowercase, unique, never changed. Sessions, push subscriptions and
       logs refer to users by it.
     - ``name`` is the display name shown to the other players (unique ignoring case).
     - ``powers`` the powers the user plays (several for games with fewer than 7 players, none for a spectator).
     - ``password`` is a PBKDF2 hash (``pbkdf2_sha256$iterations$salt$hash``), or null until the user sets one.
+    - ``lang`` is the interface language the user chose on their profile page ('en' or 'it'; missing: the site's
+      default, see webapp/i18n.py). It is also the language of their push notifications.
     - ``session_version`` goes up on every password change: sessions made before it are logged out.
     - ``link`` is the pending set-password link, ``{"hash": sha256(token), "expires"}``, or null. The admin
       issues it (for new users and forgotten passwords) and sends it to the user; it works once, for
@@ -29,9 +31,11 @@ import secrets
 import time
 from collections import namedtuple
 
+from webapp.i18n import LANGUAGES, gettext as _
+
 LOGGER = logging.getLogger(__name__)
 
-User = namedtuple('User', 'email name powers is_admin password session_version link')
+User = namedtuple('User', 'email name powers is_admin password session_version link lang', defaults=(None,))
 
 PBKDF2_ITERATIONS = 600_000         # about 0.2 s per login; the count is stored in each hash, so it can change
 LINK_DAYS = 7
@@ -79,9 +83,10 @@ def token_hash(token):
 def password_problem(password, confirm):
     """ Why a new password is not acceptable, or None. """
     if password != confirm:
-        return 'The two passwords differ.'
+        return _('The two passwords differ.')
     if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-        return 'The password must be %d to %d characters long.' % (MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH)
+        return _('The password must be %(min)d to %(max)d characters long.', min=MIN_PASSWORD_LENGTH,
+                 max=MAX_PASSWORD_LENGTH)
     return None
 
 
@@ -116,7 +121,8 @@ def _to_user(record):
     return User(email=record['email'], name=record['name'], powers=tuple(record.get('powers') or ()),
                 is_admin=bool(record.get('admin')), password=record.get('password'),
                 session_version=int(record.get('session_version') or 0),
-                link=dict(link) if link else None)
+                link=dict(link) if link else None,
+                lang=record.get('lang') if record.get('lang') in LANGUAGES else None)
 
 
 def link_state(user, now):
@@ -174,7 +180,7 @@ class UserStore:
         for record in records:
             if record.get('email') == email:
                 return record
-        raise ValueError('There is no user %s.' % email)
+        raise ValueError(_('There is no user %(email)s.', email=email))
 
     def load(self):
         """ Parses the users file. Bad records are skipped and logged (without passwords or link hashes).
@@ -213,15 +219,15 @@ class UserStore:
         """ Adds a user (without a password unless given: send them a link). :return: the new User. """
         email, name = normalize_email(email), (name or '').strip()
         if not EMAIL_RE.match(email):
-            raise ValueError('%r is not a valid email address.' % email)
+            raise ValueError(_('"%(email)s" is not a valid email address.', email=email))
         name_problem = self.name_problem(name)
         if name_problem:
             raise ValueError(name_problem)
         with self._editing() as records:
             if any(record.get('email') == email for record in records):
-                raise ValueError('There is already a user %s.' % email)
+                raise ValueError(_('There is already a user %(email)s.', email=email))
             if any(record.get('name', '').lower() == name.lower() for record in records):
-                raise ValueError('The name %r is already taken.' % name)
+                raise ValueError(_('The name "%(name)s" is already taken.', name=name))
             record = {'email': email, 'name': name, 'powers': list(powers), 'admin': bool(is_admin),
                       'password': hash_password(password) if password else None, 'session_version': 0,
                       'link': None, 'created_at': now or time.time()}
@@ -232,9 +238,9 @@ class UserStore:
     def name_problem(name):
         """ Why `name` cannot be a display name (uniqueness aside), or None. """
         if not 1 <= len(name) <= MAX_NAME_LENGTH:
-            return 'The name must be 1 to %d characters long.' % MAX_NAME_LENGTH
+            return _('The name must be 1 to %(max)d characters long.', max=MAX_NAME_LENGTH)
         if any(ord(char) < 32 or ord(char) == 127 for char in name):
-            return 'The name cannot contain control characters.'
+            return _('The name cannot contain control characters.')
         return None
 
     def delete(self, email):
@@ -254,8 +260,17 @@ class UserStore:
         with self._editing() as records:
             record = self._find(records, email)
             if any(other is not record and other.get('name', '').lower() == name.lower() for other in records):
-                raise ValueError('The name %r is already taken.' % name)
+                raise ValueError(_('The name "%(name)s" is already taken.', name=name))
             record['name'] = name
+        return _to_user(record)
+
+    def set_lang(self, email, lang):
+        """ Sets the user's interface language (one of `LANGUAGES`). :return: the updated User. """
+        if lang not in LANGUAGES:
+            raise ValueError(_('Unknown language: %(lang)s.', lang=lang))
+        with self._editing() as records:
+            record = self._find(records, email)
+            record['lang'] = lang
         return _to_user(record)
 
     def set_admin(self, email, is_admin):
@@ -323,5 +338,5 @@ def users_summary(users, now=None):
     """ Users without password or link hashes, for logs and /debug/info. """
     now = now or time.time()
     return [{'email': user.email, 'name': user.name, 'powers': list(user.powers), 'admin': user.is_admin,
-             'has_password': bool(user.password), 'link': link_state(user, now),
+             'has_password': bool(user.password), 'link': link_state(user, now), 'lang': user.lang,
              'link_expires': user.link['expires'] if user.link else None} for user in users.values()]

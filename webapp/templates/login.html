@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Log in · Diplomacy{% endblock %}
+{% block title %}{{ _('Log in') }} · Diplomacy{% endblock %}
 {% block content %}
 <div class="card" style="max-width: 24rem; margin: 2rem auto;">
-  <h1>Log in</h1>
+  <h1>{{ _('Log in') }}</h1>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Email <input type="email" name="email" autocomplete="username" autofocus required></label>
-    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
-    <button class="primary">Log in</button>
+    <label>{{ _('Email') }} <input type="email" name="email" autocomplete="username" autofocus required></label>
+    <label>{{ _('Password') }} <input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="primary">{{ _('Log in') }}</button>
   </form>
-  <p class="muted">New here, or forgot your password? Ask the admin for a link to set it.</p>
+  <p class="muted">{{ _('New here, or forgot your password? Ask the admin for a link to set it.') }}</p>
 </div>
 {% endblock %}
