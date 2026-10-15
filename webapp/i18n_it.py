@@ -397,4 +397,255 @@ MESSAGES = {
         'Durata delle fasi aggiornata. Vale dalla prossima fase.',
     'Tick the confirmation box to end the game.': 'Spunta la casella di conferma per terminare la partita.',
     'Game ended as a draw.': 'Partita terminata in parità.',
+
+    # Help page (help.html, tutorial.py)
+    'Cheat sheet': 'Promemoria',
+    'The game in brief': 'Il gioco in breve',
+    '<strong>Goal:</strong> control 18 of the 34 supply centers (the dots on the map). Players can also agree to a '
+    'draw between the survivors.':
+        '<strong>Scopo:</strong> controllare 18 dei 34 centri di approvvigionamento (i pallini sulla mappa). I '
+        'giocatori possono anche accordarsi per una parità tra i sopravvissuti.',
+    '<strong>Units:</strong> armies (<code>A</code>) move on land, fleets (<code>F</code>) on sea and along coasts. '
+    'All units have the same strength, and a province holds one unit at most. Sea provinces are written in italics '
+    '(<code><span class="sea">NTH</span></code>), land ones upright (<code>LON</code>).':
+        "<strong>Unità:</strong> le armate (<code>A</code>) si muovono per terra, le flotte (<code>F</code>) per mare "
+        "e lungo le coste. Tutte le unità hanno la stessa forza, e in una provincia può stare al massimo un'unità. Le "
+        'zone di mare sono scritte in corsivo (<code><span class="sea">NTH</span></code>), le province di terra in '
+        'tondo (<code>LON</code>).',
+    '<strong>Everybody moves at once.</strong> Orders are secret, then revealed and resolved together. Talk, promise '
+    'and lie as you like: nothing said is binding.':
+        '<strong>Tutti muovono contemporaneamente.</strong> Gli ordini sono segreti, poi vengono rivelati e risolti '
+        'tutti insieme. Trattate, promettete e mentite quanto volete: niente di ciò che si dice è vincolante.',
+    '<strong>You have as many units as supply centers.</strong> Centers change hands only at the end of Fall, by '
+    'having a unit there.':
+        "<strong>Hai tante unità quanti centri di approvvigionamento.</strong> I centri cambiano proprietario solo "
+        "alla fine dell'Autunno, occupandoli con una propria unità.",
+    'A game year': 'Un anno di gioco',
+    'Phase': 'Fase',
+    'Code': 'Codice',
+    'What happens': 'Cosa succede',
+    'Spring, movement': 'Primavera, movimento',
+    'Everybody orders all their units.': 'Ognuno dà gli ordini a tutte le sue unità.',
+    'Spring, retreats': 'Primavera, ritirate',
+    'Dislodged units retreat or disband.': 'Le unità sloggiate si ritirano o vengono sciolte.',
+    'Fall, movement': 'Autunno, movimento',
+    'As in Spring.': 'Come in Primavera.',
+    'Fall, retreats': 'Autunno, ritirate',
+    'As in Spring. Then supply centers change owner.':
+        'Come in Primavera. Poi i centri di approvvigionamento cambiano proprietario.',
+    'Winter, adjustments': 'Inverno, aggiustamenti',
+    'Build new units or disband the excess.': 'Si costruiscono nuove unità o si sciolgono quelle in eccesso.',
+    'Retreat and adjustment phases are skipped when nobody has anything to do in them.':
+        'Le fasi di ritirata e di aggiustamento vengono saltate quando nessuno ha niente da fare.',
+    'Order': 'Ordine',
+    'Written': 'Si scrive',
+    'Meaning': 'Significato',
+    'Stay. A unit without orders holds.': "Resta ferma. Un'unità senza ordini sta ferma.",
+    'Go to an adjacent province. Moving into an occupied province is an attack.':
+        'Va in una provincia adiacente. Spostarsi in una provincia occupata è un attacco.',
+    'Support a move': 'Appoggio a uno spostamento',
+    'Add 1 to the strength of that exact move. You must be able to move to the target province yourself (here '
+    'Burgundy).':
+        'Aggiunge 1 alla forza di quello spostamento preciso. Devi poterti spostare tu stesso nella provincia di '
+        'destinazione (qui la Borgogna).',
+    'Support a unit in place': "Appoggio a un'unità ferma",
+    'Add 1 to the defence of a unit that is not moving (holding, supporting or convoying).':
+        "Aggiunge 1 alla difesa di un'unità che non si sposta (ferma, che appoggia o che trasporta).",
+    'A fleet at sea carries an army between two coasts. The army is ordered <code>A LON - NWY VIA</code>. Several '
+    'fleets can form a chain.':
+        "Una flotta in una zona di mare trasporta un'armata da una costa all'altra. L'armata riceve l'ordine "
+        '<code>A LON - NWY VIA</code>. Più flotte possono formare una catena.',
+    'Retreat phase only.': 'Solo nella fase di ritirata.',
+    'Remove the unit (retreat and adjustment phases).':
+        "Toglie l'unità dalla mappa (fasi di ritirata e di aggiustamento).",
+    'Adjustment phase only.': 'Solo nella fase di aggiustamento.',
+    "You can support, or convoy, another player's unit, without asking. A support cannot be refused.":
+        "Puoi appoggiare, o trasportare via mare, un'unità di un altro giocatore, senza chiedere. Un appoggio non si "
+        'può rifiutare.',
+    'Who wins a conflict': 'Chi vince un conflitto',
+    '<strong>Strength</strong> is 1 plus the number of valid supports. The strongest wins; if the best are equal, '
+    'nobody moves (a <em>bounce</em>). A bounce does not dislodge a unit already there.':
+        '<strong>La forza</strong> è 1 più il numero di appoggi validi. Vince il più forte; se i più forti sono '
+        "pari, nessuno si sposta (uno <em>stallo</em>). Uno stallo non sloggia un'unità che si trova già lì.",
+    'To <strong>dislodge</strong> a unit you need more strength than it has holding there. A dislodged unit must '
+    'retreat.':
+        "Per <strong>sloggiare</strong> un'unità serve più forza di quella che ha restando ferma lì. Un'unità "
+        'sloggiata deve ritirarsi.',
+    'A unit that fails to move stays where it is, and can in turn block those trying to enter its province.':
+        "Un'unità che non riesce a spostarsi resta dov'è, e può a sua volta bloccare chi cerca di entrare nella sua "
+        'provincia.',
+    '<strong>Two units cannot swap places</strong> (except by convoy). Three or more can rotate in a circle.':
+        '<strong>Due unità non possono scambiarsi di posto</strong> (salvo con un trasporto via mare). Tre o più '
+        'possono ruotare in cerchio.',
+    '<strong>A support is cut</strong> if the supporting unit is attacked from anywhere except the province it is '
+    'supporting an attack on, even if that attack fails. It is also cut if the supporting unit is dislodged.':
+        "<strong>Un appoggio è neutralizzato</strong> se l'unità che appoggia viene attaccata da qualunque provincia "
+        "tranne quella contro cui sta appoggiando un attacco, anche se l'attacco fallisce. È neutralizzato anche se "
+        "l'unità che appoggia viene sloggiata.",
+    'A support must match the order exactly: supporting <code>A MUN - SIL</code> does nothing if Munich goes '
+    'elsewhere or holds.':
+        "Un appoggio deve corrispondere esattamente all'ordine: appoggiare <code>A MUN - SIL</code> non serve a "
+        'niente se Monaco va altrove o sta ferma.',
+    '<strong>You cannot dislodge your own unit</strong>, nor support someone doing so, and attacking your own unit '
+    'does not cut its support.':
+        '<strong>Non puoi sloggiare una tua unità</strong>, né appoggiare qualcuno che lo fa, e attaccare una tua '
+        "unità non ne neutralizza l'appoggio.",
+    '<strong>A convoy fails</strong> if one of its fleets is dislodged (attacking the fleet is not enough) and no '
+    'other route is left. The army then stays where it was.':
+        '<strong>Un trasporto via mare fallisce</strong> se una delle sue flotte viene sloggiata (attaccarla non '
+        "basta) e non resta nessun'altra rotta. L'armata allora resta dov'era.",
+    'Only fleets in sea provinces convoy; fleets in coastal provinces cannot.':
+        'Solo le flotte nelle zone di mare trasportano; quelle nelle province costiere no.',
+    'Examples': 'Esempi',
+    "These pictures and results come from this site's own rule engine.":
+        'Queste immagini e questi risultati vengono dal motore di regole del sito stesso.',
+    'Map for: %(title)s': 'Mappa per: %(title)s',
+    'Result words': 'Parole dei risultati',
+    'The move failed; the unit stayed.': "Lo spostamento è fallito; l'unità è rimasta dov'era.",
+    'The support was cut and did not count.': "L'appoggio è stato neutralizzato e non è contato.",
+    'The unit was forced out and must retreat.': "L'unità è stata cacciata e deve ritirarsi.",
+    'The order had no effect, e.g. a support for a move that was not ordered.':
+        "L'ordine non ha avuto effetto, per esempio un appoggio a uno spostamento che non è stato ordinato.",
+    'The army had no complete chain of convoying fleets.':
+        "L'armata non aveva una catena completa di flotte che la trasportassero.",
+    'The convoy was broken because a fleet was dislodged.':
+        'Il trasporto è stato interrotto perché una flotta è stata sloggiata.',
+    'The unit was removed.': "L'unità è stata tolta dalla mappa.",
+    'Map oddities': 'Particolarità della mappa',
+    '<strong>Spain, Bulgaria and St Petersburg have two coasts.</strong> A fleet there sits on one coast (<code>F '
+    'SPA/NC</code>, <code>F STP/SC</code>, <code>F BUL/EC</code>) and can only leave along it. It still occupies '
+    'the whole province.':
+        '<strong>Spagna, Bulgaria e San Pietroburgo hanno due coste.</strong> Una flotta lì sta su una delle due '
+        '(<code>F SPA/NC</code>, <code>F STP/SC</code>, <code>F BUL/EC</code>) e può ripartire solo lungo quella. '
+        "Occupa comunque l'intera provincia.",
+    '<strong>Kiel and Constantinople</strong> have a single coast: fleets pass through them (Kiel canal, the '
+    'straits).':
+        '<strong>Kiel e Costantinopoli</strong> hanno una sola costa: le flotte le attraversano (il canale di Kiel, '
+        'gli stretti).',
+    'Armies and fleets can go between <strong>Sweden and Denmark</strong>. A fleet cannot go from the Baltic '
+    'straight to the Skagerrak.':
+        'Armate e flotte possono passare tra <strong>Svezia e Danimarca</strong>. Una flotta non può andare dal Mar '
+        'Baltico direttamente allo Skagerrak.',
+    'A fleet on a coast moves only to provinces adjacent <em>along that coast</em>: Rome to Tuscany or Naples, not '
+    'to Venice.':
+        'Una flotta su una costa si sposta solo nelle province adiacenti <em>lungo quella costa</em>: da Roma in '
+        'Toscana o a Napoli, non a Venezia.',
+    'Switzerland cannot be entered.': 'In Svizzera non si può entrare.',
+    'A dislodged unit retreats to an adjacent province it could normally move to, but not to an occupied one, not '
+    'to where its attacker came from, and not to one left empty by a bounce this turn.':
+        "Un'unità sloggiata si ritira in una provincia adiacente in cui potrebbe normalmente spostarsi, ma non in una "
+        "occupata, non in quella da cui è venuto l'attaccante, e non in una rimasta vuota per uno stallo in questo "
+        'turno.',
+    'With nowhere to go it is disbanded. You may also choose to disband.':
+        'Se non ha dove andare viene sciolta. Puoi anche scegliere di scioglierla.',
+    'Two units retreating to the same province are both disbanded.':
+        'Due unità che si ritirano nella stessa provincia vengono sciolte entrambe.',
+    'Builds and disbands (Winter)': 'Costruzioni e scioglimenti (Inverno)',
+    'More centers than units: you may <strong>build</strong>, only in your own <em>home</em> centers (★ in the '
+    'table below), if you still own them and they are empty. Armies anywhere, fleets on the coast. You may build '
+    'fewer than allowed.':
+        'Più centri che unità: puoi <strong>costruire</strong>, solo nei centri della tua <em>madrepatria</em> (★ '
+        'nella tabella qui sotto), se li possiedi ancora e sono liberi. Armate ovunque, flotte sulla costa. Puoi '
+        'costruire meno unità di quante ti spettano.',
+    'Fewer centers than units: you must <strong>disband</strong> the difference.':
+        'Meno centri che unità: devi <strong>sciogliere</strong> le unità in più.',
+    'A center you walked through in Spring but left before the end of Fall is not yours.':
+        "Un centro che hai attraversato in Primavera ma lasciato prima della fine dell'Autunno non è tuo.",
+    'Using this site': 'Usare il sito',
+    '<strong>Game page.</strong> The map, the deadline, your orders and a table of all powers. Negotiate however '
+    'you like (in person, chat, phone): the site only collects orders.':
+        '<strong>Pagina della partita.</strong> La mappa, la scadenza, i tuoi ordini e una tabella di tutte le '
+        'Potenze. Trattate come volete (di persona, in chat, al telefono): il sito raccoglie solo gli ordini.',
+    '<strong>Giving orders.</strong> Each of your units has a menu listing every legal order for it; you can also '
+    'click (or tap) the unit on the map. Leaving the first entry means the default: hold in movement, disband in '
+    'retreats, no build or keep in winter. Each order is saved as soon as you choose it, and your saved orders '
+    'appear as arrows on your own map. (Without JavaScript, press <em>Save orders</em> instead.)':
+        "<strong>Dare gli ordini.</strong> Ogni tua unità ha un menu con tutti gli ordini validi per lei; puoi anche "
+        "cliccare (o toccare) l'unità sulla mappa. Lasciare la prima voce vuol dire il predefinito: “Fermo” nel "
+        'movimento, “Scioglimento” nelle ritirate, “Nessuna costruzione” o “Mantieni” in inverno. Ogni ordine è '
+        'salvato appena lo scegli, e i tuoi ordini salvati compaiono come frecce sulla tua mappa. (Senza '
+        'JavaScript, premi invece <em>Salva gli ordini</em>.)',
+    '<strong>Secrecy.</strong> Nobody else sees your orders until the phase is processed. Others only see whether '
+    'you have submitted. You can change your orders as often as you like until then.':
+        '<strong>Segretezza.</strong> Nessun altro vede i tuoi ordini finché la fase non è risolta. Gli altri vedono '
+        'solo se li hai dati. Fino ad allora puoi cambiarli quante volte vuoi.',
+    '<strong>"I\'m done".</strong> Press it when you have finished: you are then <em>ready</em>, and as soon as '
+    'every player is ready the phase is processed, without waiting for the deadline. Changing an order afterwards '
+    'takes it back; <em>I\'m not done</em> keeps your orders saved but makes the game wait for you. (Without '
+    'JavaScript: tick the <em>I\'m done</em> box before saving.)':
+        '<strong>“Ho finito”.</strong> Premilo quando hai finito: risulti allora <em>pronto</em>, e appena tutti i '
+        'giocatori sono pronti la fase viene risolta, senza aspettare la scadenza. Se poi cambi un ordine non sei '
+        'più pronto; <em>Non ho finito</em> tiene salvati i tuoi ordini ma fa aspettare la partita. (Senza '
+        'JavaScript: spunta la casella <em>Ho finito</em> prima di salvare.)',
+    '<strong>Deadline.</strong> When it passes, the phase is processed with whatever was saved, within a few '
+    'minutes (or as soon as anyone opens a page). Standard lengths are %(movement)s hours for movement and '
+    '%(other)s for retreats and adjustments; the admin can change them.':
+        '<strong>Scadenza.</strong> Quando passa, la fase viene risolta con quello che è stato salvato, entro pochi '
+        'minuti (o appena qualcuno apre una pagina). Le durate standard sono %(movement)s ore per il movimento e '
+        "%(other)s per ritirate e aggiustamenti; l'admin può cambiarle.",
+    '<strong>If you miss it:</strong> your units hold; dislodged units are disbanded; builds are lost; if you had '
+    'to disband, the engine chooses which units.':
+        '<strong>Se la manchi:</strong> le tue unità stanno ferme; le unità sloggiate vengono sciolte; le '
+        'costruzioni vanno perse; se dovevi sciogliere delle unità, il motore sceglie quali.',
+    '<strong>Powers without a player</strong> never give orders: their units hold, and nobody waits for them. With '
+    'fewer than seven players the admin starts the game for 3-7 (or 2) players as in the rulebook\'s "Alternate '
+    'way to play": neutral powers hold and never support, and one user may control several countries, all in the '
+    'same orders form.':
+        '<strong>Le Potenze senza giocatore</strong> non danno mai ordini: le loro unità stanno ferme, e nessuno le '
+        "aspetta. Con meno di sette giocatori l'admin avvia la partita per 3-7 (o 2) giocatori come nel regolamento "
+        '(“Per giocare con meno di sette persone”): le Potenze neutrali stanno ferme e non appoggiano mai, e un '
+        'utente può controllare più Potenze, tutte nello stesso modulo di ordini.',
+    '<strong>Notifications.</strong> On the <em>Notifications</em> page you can get a notification on your phone '
+    'when a new phase needs your orders, and a reminder before the deadline if you are not done yet. On iPhone, add '
+    'the site to your home screen first (Safari: <em>Share → Add to Home Screen</em>) and enable them from there.':
+        '<strong>Notifiche.</strong> Nella pagina <em>Notifiche</em> puoi ricevere una notifica sul telefono quando '
+        'una nuova fase richiede i tuoi ordini, e un promemoria prima della scadenza se non hai ancora finito. Su '
+        'iPhone aggiungi prima il sito alla schermata Home (Safari: <em>Condividi → Aggiungi alla schermata '
+        'Home</em>) e attivale da lì.',
+    "<strong>History</strong> shows every past phase: the map with everybody's orders, and the results.":
+        'Lo <strong>Storico</strong> mostra ogni fase passata: la mappa con gli ordini di tutti, e i risultati.',
+    'Status in the powers table': 'Stato nella tabella delle Potenze',
+    'Has not saved orders in this phase.': 'Non ha ancora salvato ordini in questa fase.',
+    'Saved orders, but the game waits for them until the deadline.':
+        'Ha salvato degli ordini, ma la partita lo aspetta fino alla scadenza.',
+    'Saved orders and pressed "I\'m done".': 'Ha salvato gli ordini e premuto “Ho finito”.',
+    'No unit to order in this phase (common in retreats and winter).':
+        'Nessuna unità a cui dare ordini in questa fase (capita spesso nelle ritirate e in inverno).',
+    'Nobody plays this power.': 'Nessuno gioca questa Potenza.',
+    'Provinces on our map': 'Le province sulla nostra mappa',
+    '● supply center &nbsp; ★ home supply center (the owner can build there)':
+        '● centro di approvvigionamento &nbsp; ★ centro della madrepatria (il proprietario può costruirvi)',
+    'Inland': 'Province interne',
+    'Coastal': 'Province costiere',
+    'Sea': 'Zone di mare',
+    'A standoff (bounce)': 'Uno stallo',
+    'Germany and Russia both order an army into Silesia. The forces are equal, one against one, so nobody moves and '
+    'Silesia stays empty.':
+        "Germania e Russia ordinano entrambe a un'armata di entrare in Slesia. Le forze sono pari, uno contro uno, "
+        'quindi nessuno si sposta e la Slesia resta vuota.',
+    'A supported attack': 'Un attacco con appoggio',
+    'The French army in Marseilles attacks Burgundy with the support of the army in Gascony: two against one. The '
+    'German army is dislodged and will have to retreat.':
+        "L'armata francese di Marsiglia attacca la Borgogna con l'appoggio dell'armata in Guascogna: due contro uno. "
+        "L'armata tedesca è sloggiata e dovrà ritirarsi.",
+    'Cutting a support': 'Neutralizzare un appoggio',
+    'Germany attacks Warsaw from Prussia with support from Silesia. But Russia attacks Silesia from Bohemia: that '
+    'attack fails, yet it is enough to cut the support. The attack on Warsaw is now one against one and bounces.':
+        "La Germania attacca Varsavia dalla Prussia con l'appoggio dell'armata in Slesia. Ma la Russia attacca la "
+        "Slesia dalla Boemia: quell'attacco fallisce, ma basta a neutralizzare l'appoggio. L'attacco a Varsavia ora è "
+        'uno contro uno e finisce in stallo.',
+    'Supporting a unit that stays': "Appoggiare un'unità ferma",
+    'France attacks the Tyrrhenian Sea with support (two), but the Italian fleet there is supported in place by the '
+    'fleet in Rome (two). Equal forces: the attack bounces.':
+        'La Francia attacca il Mar Tirreno con un appoggio (due), ma la flotta italiana che vi si trova è appoggiata '
+        "sul posto dalla flotta di Roma (due). Forze pari: l'attacco finisce in stallo.",
+    'A convoy': 'Un trasporto via mare',
+    'The English fleet in the North Sea carries the army from London to Norway in a single turn. Both orders are '
+    'needed: the army moves, the fleet convoys.':
+        "La flotta inglese nel Mare del Nord trasporta l'armata da Londra in Norvegia in un solo turno. Servono "
+        "entrambi gli ordini: l'armata si sposta, la flotta la trasporta.",
+    'support given': 'appoggio dato',
+    'convoy made': 'trasporto fatto',
+    'holds': 'resta ferma',
+    'succeeds': 'riesce',
 }

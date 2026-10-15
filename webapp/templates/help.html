@@ -1,8 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Help · Diplomacy{% endblock %}
+{% block title %}{{ _('Help') }} · Diplomacy{% endblock %}
 {% block content %}
 <div class="help">
-<h1>Cheat sheet</h1>
+<h1>{{ _('Cheat sheet') }}</h1>
+{% if g.lang == 'it' %}
+{# The Italian rulebook is an older edition: the site takes its terms from it, but its rules (and abbreviations) are
+   the 4th edition's. Keep this list of differences up to date. #}
+<div class="card">
+  <p style="margin-top: 0">I termini di questo sito sono quelli del regolamento italiano:
+    <a href="{{ url_for('game.regole_pdf') }}"><strong>Regole del gioco (PDF, 11 pagine)</strong></a>,
+    con un esempio di partita commentato (“Esempio di gioco”, p. 10).
+    Le regole del sito però sono quelle della 4ª edizione ufficiale (2000):
+    <a href="{{ url_for('game.rules_pdf') }}">Rules of Diplomacy</a> (PDF in inglese, 24 pagine).
+    Dove i due regolamenti non coincidono valgono le regole del sito, riassunte in questa pagina.</p>
+  <p style="margin-bottom: 0"><strong>Differenze rispetto a questo regolamento:</strong></p>
+  <ul style="margin-bottom: 0">
+    <li><strong>Trasporto via mare lungo più rotte:</strong> se una delle flotte viene sloggiata ma resta almeno una
+      rotta intatta, l'armata arriva lo stesso (il regolamento italiano, XII.4 ed Esempio 12, dice che il trasporto
+      non avviene).</li>
+    <li><strong>Partita a due giocatori:</strong> inizia nella Primavera 1901 (non nel 1914); l'Italia resta neutrale
+      fino alla Primavera 1902, quando una moneta decide a quale dei due giocatori si unisce; vince chi ha 24 centri di
+      approvvigionamento (non 24 unità).</li>
+    <li><strong>Abbreviazioni:</strong> il sito usa le sue (vedi la <a href="#provinces">tabella in fondo</a>).
+      Il regolamento scrive <code>Mid</code> per il nostro <code>MAO</code>, <code>Nat</code> per <code>NAO</code>,
+      <code>Nrg</code> per <code>NWG</code>, <code>Gul</code> o <code>Lyo</code> per <code>LYO</code>, e
+      <code>Tyr</code> sia per il Tirolo (il nostro <code>TYR</code>) sia per il Mar Tirreno (il nostro
+      <code>TYS</code>).</li>
+  </ul>
+</div>
+{% else %}
 <div class="card">
   <p style="margin-top: 0">The full rules are in the official rulebook:
     <a href="{{ url_for('game.rules_pdf') }}"><strong>Rules of Diplomacy (PDF, 24 pages)</strong></a>.
@@ -13,173 +39,195 @@
     our map says <code>MAO</code>, <code>NAO</code>, <code>NWG</code>, <code>LYO</code>, <code>TYS</code>).
     Use the <a href="#provinces">table at the bottom</a>.</p>
 </div>
+{% endif %}
 
-<h2 id="game">The game in brief</h2>
+<h2 id="game">{{ _('The game in brief') }}</h2>
 <ul>
-  <li><strong>Goal:</strong> control 18 of the 34 supply centers (the dots on the map). Players can also agree to a
-    draw between the survivors.</li>
-  <li><strong>Units:</strong> armies (<code>A</code>) move on land, fleets (<code>F</code>) on sea and along coasts.
-    All units have the same strength, and a province holds one unit at most.
-    Sea provinces are written in italics (<code><span class="sea">NTH</span></code>), land ones upright
-    (<code>LON</code>).</li>
-  <li><strong>Everybody moves at once.</strong> Orders are secret, then revealed and resolved together.
-    Talk, promise and lie as you like: nothing said is binding.</li>
-  <li><strong>You have as many units as supply centers.</strong> Centers change hands only at the end of Fall,
-    by having a unit there.</li>
+  <li>{{ _('<strong>Goal:</strong> control 18 of the 34 supply centers (the dots on the map). Players can also agree '
+           'to a draw between the survivors.') }}</li>
+  <li>{{ _('<strong>Units:</strong> armies (<code>A</code>) move on land, fleets (<code>F</code>) on sea and along '
+           'coasts. All units have the same strength, and a province holds one unit at most. Sea provinces are '
+           'written in italics (<code><span class="sea">NTH</span></code>), land ones upright (<code>LON</code>).') }}</li>
+  <li>{{ _('<strong>Everybody moves at once.</strong> Orders are secret, then revealed and resolved together. Talk, '
+           'promise and lie as you like: nothing said is binding.') }}</li>
+  <li>{{ _('<strong>You have as many units as supply centers.</strong> Centers change hands only at the end of Fall, '
+           'by having a unit there.') }}</li>
 </ul>
 
-<h2 id="year">A game year</h2>
+<h2 id="year">{{ _('A game year') }}</h2>
 <div class="table-wrap">
 <table>
-  <tr><th>Phase</th><th>Code</th><th>What happens</th></tr>
-  <tr><td>Spring, movement</td><td><code>S1901M</code></td><td>Everybody orders all their units.</td></tr>
-  <tr><td>Spring, retreats</td><td><code>S1901R</code></td><td>Dislodged units retreat or disband.</td></tr>
-  <tr><td>Fall, movement</td><td><code>F1901M</code></td><td>As in Spring.</td></tr>
-  <tr><td>Fall, retreats</td><td><code>F1901R</code></td><td>As in Spring. Then supply centers change owner.</td></tr>
-  <tr><td>Winter, adjustments</td><td><code>W1901A</code></td><td>Build new units or disband the excess.</td></tr>
+  <tr><th>{{ _('Phase') }}</th><th>{{ _('Code') }}</th><th>{{ _('What happens') }}</th></tr>
+  <tr><td>{{ _('Spring, movement') }}</td><td><code>S1901M</code></td><td>{{ _('Everybody orders all their units.') }}</td></tr>
+  <tr><td>{{ _('Spring, retreats') }}</td><td><code>S1901R</code></td><td>{{ _('Dislodged units retreat or disband.') }}</td></tr>
+  <tr><td>{{ _('Fall, movement') }}</td><td><code>F1901M</code></td><td>{{ _('As in Spring.') }}</td></tr>
+  <tr><td>{{ _('Fall, retreats') }}</td><td><code>F1901R</code></td><td>{{ _('As in Spring. Then supply centers change owner.') }}</td></tr>
+  <tr><td>{{ _('Winter, adjustments') }}</td><td><code>W1901A</code></td><td>{{ _('Build new units or disband the excess.') }}</td></tr>
 </table>
 </div>
-<p class="muted">Retreat and adjustment phases are skipped when nobody has anything to do in them.</p>
+<p class="muted">{{ _('Retreat and adjustment phases are skipped when nobody has anything to do in them.') }}</p>
 
-<h2 id="orders">Orders</h2>
+<h2 id="orders">{{ _('Orders') }}</h2>
 <div class="table-wrap">
 <table>
-  <tr><th>Order</th><th>Written</th><th>Meaning</th></tr>
-  <tr><td>Hold</td><td><code>A PAR H</code></td><td>Stay. A unit without orders holds.</td></tr>
-  <tr><td>Move</td><td><code>A PAR - BUR</code></td><td>Go to an adjacent province. Moving into an occupied
-    province is an attack.</td></tr>
-  <tr><td>Support a move</td><td><code>A GAS S A MAR - BUR</code></td><td>Add 1 to the strength of that exact move.
-    You must be able to move to the target province yourself (here Burgundy).</td></tr>
-  <tr><td>Support a unit in place</td><td><code>F ROM S F TYS</code></td><td>Add 1 to the defence of a unit that is
-    not moving (holding, supporting or convoying).</td></tr>
-  <tr><td>Convoy</td><td><code>F <span class="sea">NTH</span> C A LON - NWY</code></td><td>A fleet at sea carries an army between two coasts.
-    The army is ordered <code>A LON - NWY VIA</code>. Several fleets can form a chain.</td></tr>
-  <tr><td>Retreat</td><td><code>A BUR R GAS</code></td><td>Retreat phase only.</td></tr>
-  <tr><td>Disband</td><td><code>A BUR D</code></td><td>Remove the unit (retreat and adjustment phases).</td></tr>
-  <tr><td>Build</td><td><code>F BRE B</code></td><td>Adjustment phase only.</td></tr>
+  <tr><th>{{ _('Order') }}</th><th>{{ _('Written') }}</th><th>{{ _('Meaning') }}</th></tr>
+  <tr><td>{{ _('Hold') }}</td><td><code>A PAR H</code></td><td>{{ _('Stay. A unit without orders holds.') }}</td></tr>
+  <tr><td>{{ _('Move') }}</td><td><code>A PAR - BUR</code></td><td>{{ _('Go to an adjacent province. Moving into an '
+    'occupied province is an attack.') }}</td></tr>
+  <tr><td>{{ _('Support a move') }}</td><td><code>A GAS S A MAR - BUR</code></td><td>{{ _('Add 1 to the strength of '
+    'that exact move. You must be able to move to the target province yourself (here Burgundy).') }}</td></tr>
+  <tr><td>{{ _('Support a unit in place') }}</td><td><code>F ROM S F TYS</code></td><td>{{ _('Add 1 to the defence of '
+    'a unit that is not moving (holding, supporting or convoying).') }}</td></tr>
+  <tr><td>{{ _('Convoy') }}</td><td><code>F <span class="sea">NTH</span> C A LON - NWY</code></td><td>{{ _('A fleet at '
+    'sea carries an army between two coasts. The army is ordered <code>A LON - NWY VIA</code>. Several fleets can '
+    'form a chain.') }}</td></tr>
+  <tr><td>{{ _('Retreat') }}</td><td><code>A BUR R GAS</code></td><td>{{ _('Retreat phase only.') }}</td></tr>
+  <tr><td>{{ _('Disband') }}</td><td><code>A BUR D</code></td><td>{{ _('Remove the unit (retreat and adjustment '
+    'phases).') }}</td></tr>
+  <tr><td>{{ _('Build') }}</td><td><code>F BRE B</code></td><td>{{ _('Adjustment phase only.') }}</td></tr>
 </table>
 </div>
-<p>You can support, or convoy, another player's unit, without asking. A support cannot be refused.</p>
+<p>{{ _("You can support, or convoy, another player's unit, without asking. A support cannot be refused.") }}</p>
 
-<h2 id="resolution">Who wins a conflict</h2>
+<h2 id="resolution">{{ _('Who wins a conflict') }}</h2>
 <ul>
-  <li><strong>Strength</strong> is 1 plus the number of valid supports. The strongest wins; if the best are equal,
-    nobody moves (a <em>bounce</em>). A bounce does not dislodge a unit already there.</li>
-  <li>To <strong>dislodge</strong> a unit you need more strength than it has holding there.
-    A dislodged unit must retreat.</li>
-  <li>A unit that fails to move stays where it is, and can in turn block those trying to enter its province.</li>
-  <li><strong>Two units cannot swap places</strong> (except by convoy). Three or more can rotate in a circle.</li>
-  <li><strong>A support is cut</strong> if the supporting unit is attacked from anywhere except the province it is
-    supporting an attack on, even if that attack fails. It is also cut if the supporting unit is dislodged.</li>
-  <li>A support must match the order exactly: supporting <code>A MUN - SIL</code> does nothing if Munich goes
-    elsewhere or holds.</li>
-  <li><strong>You cannot dislodge your own unit</strong>, nor support someone doing so, and attacking your own
-    unit does not cut its support.</li>
-  <li><strong>A convoy fails</strong> if one of its fleets is dislodged (attacking the fleet is not enough) and
-    no other route is left. The army then stays where it was.</li>
-  <li>Only fleets in sea provinces convoy; fleets in coastal provinces cannot.</li>
+  <li>{{ _('<strong>Strength</strong> is 1 plus the number of valid supports. The strongest wins; if the best are '
+           'equal, nobody moves (a <em>bounce</em>). A bounce does not dislodge a unit already there.') }}</li>
+  <li>{{ _('To <strong>dislodge</strong> a unit you need more strength than it has holding there. A dislodged unit '
+           'must retreat.') }}</li>
+  <li>{{ _('A unit that fails to move stays where it is, and can in turn block those trying to enter its '
+           'province.') }}</li>
+  <li>{{ _('<strong>Two units cannot swap places</strong> (except by convoy). Three or more can rotate in a '
+           'circle.') }}</li>
+  <li>{{ _('<strong>A support is cut</strong> if the supporting unit is attacked from anywhere except the province '
+           'it is supporting an attack on, even if that attack fails. It is also cut if the supporting unit is '
+           'dislodged.') }}</li>
+  <li>{{ _('A support must match the order exactly: supporting <code>A MUN - SIL</code> does nothing if Munich goes '
+           'elsewhere or holds.') }}</li>
+  <li>{{ _('<strong>You cannot dislodge your own unit</strong>, nor support someone doing so, and attacking your own '
+           'unit does not cut its support.') }}</li>
+  <li>{{ _('<strong>A convoy fails</strong> if one of its fleets is dislodged (attacking the fleet is not enough) '
+           'and no other route is left. The army then stays where it was.') }}</li>
+  <li>{{ _('Only fleets in sea provinces convoy; fleets in coastal provinces cannot.') }}</li>
 </ul>
 
-<h3 id="examples">Examples</h3>
-<p class="muted">These pictures and results come from this site's own rule engine.</p>
+<h3 id="examples">{{ _('Examples') }}</h3>
+<p class="muted">{{ _("These pictures and results come from this site's own rule engine.") }}</p>
 <div class="examples">
   {% for example in examples %}
+    {% set title, text = texts[example.id] %}
     <div class="example">
-      <h3>{{ example.title }}</h3>
-      <img src="{{ url_for('game.help_diagram', example_id=example.id) }}" alt="Map for: {{ example.title }}">
-      <p>{{ example.text }}</p>
-      {% for power, order, result in example.rows %}
-        <div class="example-row"><span class="muted">{{ power }}</span> <code>{{ order|seas }}</code>
-          <span class="result">→ {{ result }}</span></div>
+      <h3>{{ title }}</h3>
+      <img src="{{ url_for('game.help_diagram', example_id=example.id) }}" alt="{{ _('Map for: %(title)s', title=title) }}">
+      <p>{{ text }}</p>
+      {% for power, order, results in example.rows %}
+        <div class="example-row"><span class="muted">{{ power|power_name }}</span> <code>{{ order|seas }}</code>
+          <span class="result">→ {{ results|map('order_result')|join(', ') }}</span></div>
       {% endfor %}
     </div>
   {% endfor %}
 </div>
 
-<h3>Result words</h3>
+<h3>{{ _('Result words') }}</h3>
 <div class="table-wrap">
 <table>
-  <tr><td><strong>bounce</strong></td><td>The move failed; the unit stayed.</td></tr>
-  <tr><td><strong>cut</strong></td><td>The support was cut and did not count.</td></tr>
-  <tr><td><strong>dislodged</strong></td><td>The unit was forced out and must retreat.</td></tr>
-  <tr><td><strong>void</strong></td><td>The order had no effect, e.g. a support for a move that was not ordered.</td></tr>
-  <tr><td><strong>no convoy</strong></td><td>The army had no complete chain of convoying fleets.</td></tr>
-  <tr><td><strong>disrupted</strong></td><td>The convoy was broken because a fleet was dislodged.</td></tr>
-  <tr><td><strong>disband</strong></td><td>The unit was removed.</td></tr>
+  <tr><td><strong>{{ 'bounce'|order_result }}</strong></td><td>{{ _('The move failed; the unit stayed.') }}</td></tr>
+  <tr><td><strong>{{ 'cut'|order_result }}</strong></td><td>{{ _('The support was cut and did not count.') }}</td></tr>
+  <tr><td><strong>{{ 'dislodged'|order_result }}</strong></td><td>{{ _('The unit was forced out and must retreat.') }}</td></tr>
+  <tr><td><strong>{{ 'void'|order_result }}</strong></td><td>{{ _('The order had no effect, e.g. a support for a move '
+    'that was not ordered.') }}</td></tr>
+  <tr><td><strong>{{ 'no convoy'|order_result }}</strong></td><td>{{ _('The army had no complete chain of convoying '
+    'fleets.') }}</td></tr>
+  <tr><td><strong>{{ 'disrupted'|order_result }}</strong></td><td>{{ _('The convoy was broken because a fleet was '
+    'dislodged.') }}</td></tr>
+  <tr><td><strong>{{ 'disband'|order_result }}</strong></td><td>{{ _('The unit was removed.') }}</td></tr>
 </table>
 </div>
 
-<h2 id="map">Map oddities</h2>
+<h2 id="map">{{ _('Map oddities') }}</h2>
 <ul>
-  <li><strong>Spain, Bulgaria and St Petersburg have two coasts.</strong> A fleet there sits on one coast
-    (<code>F SPA/NC</code>, <code>F STP/SC</code>, <code>F BUL/EC</code>) and can only leave along it.
-    It still occupies the whole province.</li>
-  <li><strong>Kiel and Constantinople</strong> have a single coast: fleets pass through them (Kiel canal, the straits).</li>
-  <li>Armies and fleets can go between <strong>Sweden and Denmark</strong>. A fleet cannot go from the Baltic
-    straight to the Skagerrak.</li>
-  <li>A fleet on a coast moves only to provinces adjacent <em>along that coast</em>: Rome to Tuscany or Naples,
-    not to Venice.</li>
-  <li>Switzerland cannot be entered.</li>
+  <li>{{ _('<strong>Spain, Bulgaria and St Petersburg have two coasts.</strong> A fleet there sits on one coast '
+           '(<code>F SPA/NC</code>, <code>F STP/SC</code>, <code>F BUL/EC</code>) and can only leave along it. It '
+           'still occupies the whole province.') }}</li>
+  <li>{{ _('<strong>Kiel and Constantinople</strong> have a single coast: fleets pass through them (Kiel canal, the '
+           'straits).') }}</li>
+  <li>{{ _('Armies and fleets can go between <strong>Sweden and Denmark</strong>. A fleet cannot go from the Baltic '
+           'straight to the Skagerrak.') }}</li>
+  <li>{{ _('A fleet on a coast moves only to provinces adjacent <em>along that coast</em>: Rome to Tuscany or '
+           'Naples, not to Venice.') }}</li>
+  <li>{{ _('Switzerland cannot be entered.') }}</li>
 </ul>
 
-<h2 id="retreats">Retreats</h2>
+<h2 id="retreats">{{ _('Retreats') }}</h2>
 <ul>
-  <li>A dislodged unit retreats to an adjacent province it could normally move to, but not to an occupied one,
-    not to where its attacker came from, and not to one left empty by a bounce this turn.</li>
-  <li>With nowhere to go it is disbanded. You may also choose to disband.</li>
-  <li>Two units retreating to the same province are both disbanded.</li>
+  <li>{{ _('A dislodged unit retreats to an adjacent province it could normally move to, but not to an occupied '
+           'one, not to where its attacker came from, and not to one left empty by a bounce this turn.') }}</li>
+  <li>{{ _('With nowhere to go it is disbanded. You may also choose to disband.') }}</li>
+  <li>{{ _('Two units retreating to the same province are both disbanded.') }}</li>
 </ul>
 
-<h2 id="builds">Builds and disbands (Winter)</h2>
+<h2 id="builds">{{ _('Builds and disbands (Winter)') }}</h2>
 <ul>
-  <li>More centers than units: you may <strong>build</strong>, only in your own <em>home</em> centers
-    (★ in the table below), if you still own them and they are empty. Armies anywhere, fleets on the coast.
-    You may build fewer than allowed.</li>
-  <li>Fewer centers than units: you must <strong>disband</strong> the difference.</li>
-  <li>A center you walked through in Spring but left before the end of Fall is not yours.</li>
+  <li>{{ _('More centers than units: you may <strong>build</strong>, only in your own <em>home</em> centers (★ in '
+           'the table below), if you still own them and they are empty. Armies anywhere, fleets on the coast. You '
+           'may build fewer than allowed.') }}</li>
+  <li>{{ _('Fewer centers than units: you must <strong>disband</strong> the difference.') }}</li>
+  <li>{{ _('A center you walked through in Spring but left before the end of Fall is not yours.') }}</li>
 </ul>
 
-<h2 id="site">Using this site</h2>
+<h2 id="site">{{ _('Using this site') }}</h2>
 <ul>
-  <li><strong>Game page.</strong> The map, the deadline, your orders and a table of all powers.
-    Negotiate however you like (in person, chat, phone): the site only collects orders.</li>
-  <li><strong>Giving orders.</strong> Each of your units has a menu listing every legal order for it.
-    Leaving the first entry means the default: hold in movement, disband in retreats, no build or keep in winter.
-    Press <em>Save orders</em>. Your saved orders appear as arrows on your own map.</li>
-  <li><strong>Secrecy.</strong> Nobody else sees your orders until the phase is processed. Others only see whether
-    you have submitted. You can change your orders as often as you like until then.</li>
-  <li><strong>"I'm done".</strong> With the box ticked, you are <em>ready</em>: as soon as every player is ready
-    the phase is processed, without waiting for the deadline. Untick it to keep your orders saved but make
-    the game wait for you.</li>
-  <li><strong>Deadline.</strong> When it passes, the phase is processed with whatever was saved, within a few
-    minutes (or as soon as anyone opens a page). Standard lengths are {{ phase_hours['M'] }} hours for movement and
-    {{ phase_hours['R'] }} for retreats and adjustments; the admin can change them.</li>
-  <li><strong>If you miss it:</strong> your units hold; dislodged units are disbanded; builds are lost;
-    if you had to disband, the engine chooses which units.</li>
-  <li><strong>Powers without a player</strong> never give orders: their units hold, and nobody waits for them. With fewer than seven players the admin starts the game for 3-7 (or 2) players as in the rulebook's "Alternate way to play": neutral powers hold and never support, and one user may control several countries, all in the same orders form.</li>
-  <li><strong>Notifications.</strong> On the <em>Notifications</em> page you can get a notification on your phone
-    when a new phase needs your orders, and a reminder before the deadline if you are not done yet. On iPhone, add
-    the site to your home screen first (Safari: <em>Share → Add to Home Screen</em>) and enable them from there.</li>
-  <li><strong>History</strong> shows every past phase: the map with everybody's orders, and the results.</li>
+  <li>{{ _('<strong>Game page.</strong> The map, the deadline, your orders and a table of all powers. Negotiate '
+           'however you like (in person, chat, phone): the site only collects orders.') }}</li>
+  <li>{{ _('<strong>Giving orders.</strong> Each of your units has a menu listing every legal order for it; you can '
+           'also click (or tap) the unit on the map. Leaving the first entry means the default: hold in movement, '
+           'disband in retreats, no build or keep in winter. Each order is saved as soon as you choose it, and your '
+           'saved orders appear as arrows on your own map. (Without JavaScript, press <em>Save orders</em> '
+           'instead.)') }}</li>
+  <li>{{ _('<strong>Secrecy.</strong> Nobody else sees your orders until the phase is processed. Others only see '
+           'whether you have submitted. You can change your orders as often as you like until then.') }}</li>
+  <li>{{ _('<strong>"I\'m done".</strong> Press it when you have finished: you are then <em>ready</em>, and as soon '
+           'as every player is ready the phase is processed, without waiting for the deadline. Changing an order '
+           'afterwards takes it back; <em>I\'m not done</em> keeps your orders saved but makes the game wait for '
+           'you. (Without JavaScript: tick the <em>I\'m done</em> box before saving.)') }}</li>
+  <li>{{ _('<strong>Deadline.</strong> When it passes, the phase is processed with whatever was saved, within a few '
+           'minutes (or as soon as anyone opens a page). Standard lengths are %(movement)s hours for movement and '
+           '%(other)s for retreats and adjustments; the admin can change them.',
+           movement=phase_hours['M'], other=phase_hours['R']) }}</li>
+  <li>{{ _('<strong>If you miss it:</strong> your units hold; dislodged units are disbanded; builds are lost; if you '
+           'had to disband, the engine chooses which units.') }}</li>
+  <li>{{ _('<strong>Powers without a player</strong> never give orders: their units hold, and nobody waits for them. '
+           'With fewer than seven players the admin starts the game for 3-7 (or 2) players as in the rulebook\'s '
+           '"Alternate way to play": neutral powers hold and never support, and one user may control several '
+           'countries, all in the same orders form.') }}</li>
+  <li>{{ _('<strong>Notifications.</strong> On the <em>Notifications</em> page you can get a notification on your '
+           'phone when a new phase needs your orders, and a reminder before the deadline if you are not done yet. '
+           'On iPhone, add the site to your home screen first (Safari: <em>Share → Add to Home Screen</em>) and '
+           'enable them from there.') }}</li>
+  <li>{{ _('<strong>History</strong> shows every past phase: the map with everybody\'s orders, and the '
+           'results.') }}</li>
 </ul>
 <div class="table-wrap">
 <table>
-  <tr><th>Status in the powers table</th><th>Meaning</th></tr>
-  <tr><td>waiting for orders</td><td>Has not saved orders in this phase.</td></tr>
-  <tr><td>orders submitted, not ready</td><td>Saved orders, but the game waits for them until the deadline.</td></tr>
-  <tr><td>ready</td><td>Saved orders and ticked "I'm done".</td></tr>
-  <tr><td>nothing to order</td><td>No unit to order in this phase (common in retreats and winter).</td></tr>
-  <tr><td>no player (units hold)</td><td>Nobody plays this power.</td></tr>
+  <tr><th>{{ _('Status in the powers table') }}</th><th>{{ _('Meaning') }}</th></tr>
+  <tr><td>{{ 'waiting for orders'|power_state }}</td><td>{{ _('Has not saved orders in this phase.') }}</td></tr>
+  <tr><td>{{ 'orders submitted, not ready'|power_state }}</td><td>{{ _('Saved orders, but the game waits for them '
+    'until the deadline.') }}</td></tr>
+  <tr><td>{{ 'ready'|power_state }}</td><td>{{ _('Saved orders and pressed "I\'m done".') }}</td></tr>
+  <tr><td>{{ 'nothing to order'|power_state }}</td><td>{{ _('No unit to order in this phase (common in retreats and '
+    'winter).') }}</td></tr>
+  <tr><td>{{ 'no player (units hold)'|power_state }}</td><td>{{ _('Nobody plays this power.') }}</td></tr>
 </table>
 </div>
 
-<h2 id="provinces">Provinces on our map</h2>
-<p class="muted">● supply center &nbsp; ★ home supply center (the owner can build there)</p>
+<h2 id="provinces">{{ _('Provinces on our map') }}</h2>
+<p class="muted">{{ _('● supply center &nbsp; ★ home supply center (the owner can build there)') }}</p>
+{% set kind_names = {'Inland': _('Inland'), 'Coastal': _('Coastal'), 'Sea': _('Sea')} %}
 {% for kind, rows in provinces %}
-  <h3>{{ kind }}</h3>
+  <h3>{{ kind_names[kind] }}</h3>
   <div class="provinces">
     {% for abbr, name, is_center, home in rows %}
-      <div><code>{{ abbr }}</code> {{ name }}{% if home %} ★ <span class="muted">{{ home }}</span>{% elif is_center %} ●{% endif %}</div>
+      <div><code>{{ abbr }}</code> {{ name }}{% if home %} ★ <span class="muted">{{ home|power_name }}</span>{% elif is_center %} ●{% endif %}</div>
     {% endfor %}
   </div>
 {% endfor %}

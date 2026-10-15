@@ -1,6 +1,8 @@
 """ Content of the help page that is computed from the engine instead of being written by hand:
     worked examples (drawn by the renderer, resolved by the adjudicator) and the province table.
-    Both are static for a given map, so they are built once per process and cached.
+    Both are static for a given map, so they are built once per process and cached, without any translated text:
+    the examples' titles and explanations come from `example_texts()` in the language of each request, and the
+    game words (powers, results, province kinds) are English keys translated by the template.
 """
 import functools
 import logging
@@ -9,40 +11,25 @@ import re
 from diplomacy import Game
 
 from webapp.gameplay import _clean_svg
+from webapp.i18n import gettext as _
 
 LOGGER = logging.getLogger(__name__)
 
 # Each example: powers' units and orders on an otherwise empty board, and the provinces the picture shows.
 EXAMPLES = [
     {'id': 'standoff',
-     'title': 'A standoff (bounce)',
-     'text': 'Germany and Russia both order an army into Silesia. The forces are equal, one against one, '
-             'so nobody moves and Silesia stays empty.',
      'orders': {'GERMANY': ['A BER - SIL'], 'RUSSIA': ['A WAR - SIL']},
      'focus': ['BER', 'SIL', 'WAR', 'PRU', 'BOH']},
     {'id': 'support',
-     'title': 'A supported attack',
-     'text': 'The French army in Marseilles attacks Burgundy with the support of the army in Gascony: '
-             'two against one. The German army is dislodged and will have to retreat.',
      'orders': {'FRANCE': ['A MAR - BUR', 'A GAS S A MAR - BUR'], 'GERMANY': ['A BUR H']},
      'focus': ['MAR', 'BUR', 'GAS', 'PAR']},
     {'id': 'cut',
-     'title': 'Cutting a support',
-     'text': 'Germany attacks Warsaw from Prussia with support from Silesia. But Russia attacks Silesia from '
-             'Bohemia: that attack fails, yet it is enough to cut the support. The attack on Warsaw is now '
-             'one against one and bounces.',
      'orders': {'GERMANY': ['A PRU - WAR', 'A SIL S A PRU - WAR'], 'RUSSIA': ['A WAR H', 'A BOH - SIL']},
      'focus': ['PRU', 'WAR', 'SIL', 'BOH']},
     {'id': 'support-hold',
-     'title': 'Supporting a unit that stays',
-     'text': 'France attacks the Tyrrhenian Sea with support (two), but the Italian fleet there is supported '
-             'in place by the fleet in Rome (two). Equal forces: the attack bounces.',
      'orders': {'FRANCE': ['F LYO - TYS', 'F WES S F LYO - TYS'], 'ITALY': ['F TYS H', 'F ROM S F TYS']},
      'focus': ['LYO', 'WES', 'TYS', 'ROM']},
     {'id': 'convoy',
-     'title': 'A convoy',
-     'text': 'The English fleet in the North Sea carries the army from London to Norway in a single turn. '
-             'Both orders are needed: the army moves, the fleet convoys.',
      'orders': {'ENGLAND': ['A LON - NWY VIA', 'F NTH C A LON - NWY']},
      'focus': ['LON', 'NTH', 'NWY']},
 ]
@@ -50,8 +37,31 @@ EXAMPLES = [
 AREA_TYPES = {'LAND': 'Inland', 'COAST': 'Coastal', 'PORT': 'Coastal', 'WATER': 'Sea'}
 
 
+def example_texts():
+    """ Title and explanation of each worked example, in the language of the current request: {id: (title, text)}.
+        Not cached, unlike the examples themselves. """
+    return {
+        'standoff': (_('A standoff (bounce)'),
+                     _('Germany and Russia both order an army into Silesia. The forces are equal, one against one, '
+                       'so nobody moves and Silesia stays empty.')),
+        'support': (_('A supported attack'),
+                    _('The French army in Marseilles attacks Burgundy with the support of the army in Gascony: '
+                      'two against one. The German army is dislodged and will have to retreat.')),
+        'cut': (_('Cutting a support'),
+                _('Germany attacks Warsaw from Prussia with support from Silesia. But Russia attacks Silesia from '
+                  'Bohemia: that attack fails, yet it is enough to cut the support. The attack on Warsaw is now '
+                  'one against one and bounces.')),
+        'support-hold': (_('Supporting a unit that stays'),
+                         _('France attacks the Tyrrhenian Sea with support (two), but the Italian fleet there is '
+                           'supported in place by the fleet in Rome (two). Equal forces: the attack bounces.')),
+        'convoy': (_('A convoy'),
+                   _('The English fleet in the North Sea carries the army from London to Norway in a single turn. '
+                     'Both orders are needed: the army moves, the fleet convoys.')),
+    }
+
+
 def _success_word(order):
-    """ What to call an order the engine reports no failure for. A support or convoy that 'succeeds' was
+    """ What to call (English key, see `views.order_result_label`) an order the engine reports no failure for. A support or convoy that 'succeeds' was
         given as ordered, whatever then happened to the move it helped. """
     words = order.split()
     if 'S' in words[2:]:
@@ -75,7 +85,7 @@ def _crop(svg, renderer, locs, margin=130):
 def examples():
     """ Builds the worked examples: a picture of the orders and the results the engine gives them.
 
-        :return: list of dicts with id, title, text, svg and rows [(power, order, result)]
+        :return: list of dicts with id, svg and rows [(power, order, [result keys])]
     """
     built = []
     for example in EXAMPLES:
@@ -97,9 +107,8 @@ def examples():
             for order in orders:
                 unit = ' '.join(order.split()[:2])
                 results = [str(result) for result in phase_data.results.get(unit, []) if str(result)]
-                rows.append((power.title(), order, ', '.join(results) or _success_word(order)))
-        built.append({'id': example['id'], 'title': example['title'], 'text': example['text'], 'svg': svg,
-                      'rows': rows})
+                rows.append((power, order, results or [_success_word(order)]))
+        built.append({'id': example['id'], 'svg': svg, 'rows': rows})
     LOGGER.info('Built %d help examples: %s', len(built),
                 {example['id']: [row[2] for row in example['rows']] for example in built})
     return built
@@ -107,7 +116,8 @@ def examples():
 
 @functools.lru_cache(maxsize=None)
 def provinces():
-    """ Province table for the standard map: [(type name, [(abbreviation, name, is supply center, home of)])]. """
+    """ Province table for the standard map: [(kind, [(abbreviation, name, is supply center, home power)])], with
+        kind 'Inland', 'Coastal' or 'Sea' and the home power as a key ('FRANCE', or '' if none). """
     game_map = Game().map
     homes = {loc: power for power, locs in game_map.homes.items() for loc in locs if power != 'UNOWNED'}
     groups = {}
@@ -115,5 +125,5 @@ def provinces():
         kind = AREA_TYPES.get(game_map.area_type(abbr))
         if kind and '/' not in abbr:                    # 'STP/NC' etc. are coasts of a province, not provinces
             groups.setdefault(kind, []).append((abbr, name.title(), abbr in game_map.scs,
-                                                homes.get(abbr, '').title()))
+                                                homes.get(abbr, '')))
     return [(kind, sorted(groups[kind])) for kind in ('Inland', 'Coastal', 'Sea') if kind in groups]

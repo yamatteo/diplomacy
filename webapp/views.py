@@ -279,10 +279,12 @@ def power_state_label(state):
 
 @bp.app_template_filter('order_result')
 def order_result_label(result):
-    """ An engine order result code ('bounce', 'cut', ...) -> its name. """
+    """ An engine order result code ('bounce', 'cut', ...), or a success word of the help's examples
+        (`tutorial._success_word`) -> its name. """
     return {'no convoy': _('no convoy'), 'bounce': _('bounce'), 'void': _('void'), 'cut': _('cut'),
             'dislodged': _('dislodged'), 'disrupted': _('disrupted'), 'disband': _('disband'),
-            'maybe': _('maybe')}.get(result, result)
+            'maybe': _('maybe'), 'support given': _('support given'), 'convoy made': _('convoy made'),
+            'holds': _('holds'), 'succeeds': _('succeeds')}.get(result, result)
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -575,8 +577,8 @@ def history(phase=None):
 def help_page():
     """ Cheat sheet: rules in brief, worked examples, how to use this site, our province abbreviations.
         Public: it shows nothing about the game in progress. """
-    return render_template('help.html', examples=tutorial.examples(), provinces=tutorial.provinces(),
-                           phase_hours=gameplay.DEFAULT_PHASE_HOURS)
+    return render_template('help.html', examples=tutorial.examples(), texts=tutorial.example_texts(),
+                           provinces=tutorial.provinces(), phase_hours=gameplay.DEFAULT_PHASE_HOURS)
 
 
 @bp.route('/help/diagram/<example_id>.svg')
@@ -596,6 +598,18 @@ def rules_pdf():
     response = send_from_directory(current_app.root_path, 'rules.pdf', mimetype='application/pdf', max_age=86400)
     response.cache_control.public = False
     response.cache_control.private = True       # behind the login: browsers may cache it, shared proxies not
+    return response
+
+
+@bp.route('/regole.pdf')
+@login_required
+def regole_pdf():
+    """ The Italian rulebook (an older edition), linked from the Italian help for its terms: the site's rules are
+        the 4th edition's (`rules_pdf`), and the Italian help lists the differences. Players only: it is
+        copyrighted. """
+    response = send_from_directory(current_app.root_path, 'regole.pdf', mimetype='application/pdf', max_age=86400)
+    response.cache_control.public = False
+    response.cache_control.private = True
     return response
 
 

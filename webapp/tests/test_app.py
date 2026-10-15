@@ -546,7 +546,7 @@ def test_help_page_examples_and_rulebook(app):
     assert 'BUL/EC</code> Bulgaria' not in page                     # coasts are not listed as provinces
     # The examples are resolved by the engine: check they say what the rulebook says.
     from webapp import tutorial
-    results = {example['id']: [row[2] for row in example['rows']] for example in tutorial.examples()}
+    results = {example['id']: [', '.join(row[2]) for row in example['rows']] for example in tutorial.examples()}
     assert results == {
         'standoff': ['bounce', 'bounce'],
         'support': ['succeeds', 'support given', 'dislodged'],

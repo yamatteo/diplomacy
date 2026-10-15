@@ -9,9 +9,9 @@ from webapp.tests.test_notifications import payloads, set_deadline, subscribe_al
 from webapp.tests.test_webpush import FakePushService
 
 WEBAPP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Not translated yet: the cheat sheet (step 2 of the translation).
-UNTRANSLATED_TEMPLATES = {'help.html'}
-UNTRANSLATED_MODULES = {'tutorial.py', 'i18n.py', 'i18n_it.py'}
+# Modules that hold no user-visible text of their own.
+UNTRANSLATED_TEMPLATES = set()
+UNTRANSLATED_MODULES = {'i18n.py', 'i18n_it.py'}
 GETTEXT_NAMES = {'_', 'gettext', 'ngettext'}
 PLACEHOLDER_RE = re.compile(r'%\((\w+)\)[-#0 +]*\d*(?:\.\d+)?[sdifr]')
 
@@ -256,3 +256,44 @@ def test_deadline_reminders_are_in_the_recipients_language(app):
                                                'Scadenza: ')
     assert received['bruno']['title'] == 'Diplomacy: 1 h 1 min left for Spring 1901, Movement'
     assert received['bruno']['body'].startswith('Not done yet: Germany (no orders yet). Deadline: ')
+
+
+def test_help_page_in_italian_points_to_the_italian_rulebook_and_its_differences(app):
+    set_lang(app, 'anna', 'it')
+    page = Browser(app, 'anna').text('/help')
+    assert '<html lang="it">' in page and 'Promemoria' in page and 'Chi vince un conflitto' in page
+    assert 'href="/regole.pdf"' in page and 'href="/rules.pdf"' in page
+    assert 'Differenze rispetto a questo regolamento' in page
+    assert 'Trasporto via mare lungo più rotte' in page and 'Partita a due giocatori' in page
+    assert '<code>Tyr</code> sia per il Tirolo' in page
+    # The examples: titles, powers and result words in Italian; orders and abbreviations as they are.
+    assert 'Uno stallo' in page and 'Un trasporto via mare' in page
+    assert '<span class="muted">Germania</span> <code>A BER - SIL</code>' in page
+    assert '→ stallo' in page and '→ appoggio dato' in page and '→ riesce' in page and '→ neutralizzato' in page
+    assert 'Zone di mare' in page and '★ <span class="muted">Francia</span>' in page
+    assert 'Standard lengths' not in page and 'Le durate standard sono 48 ore' in page
+
+
+def test_help_page_in_english_points_only_to_the_official_rulebook(app):
+    page = Browser(app, 'bruno').text('/help')
+    assert '<html lang="en">' in page and 'Cheat sheet' in page
+    assert 'href="/rules.pdf"' in page and 'regole.pdf' not in page and 'Differenze' not in page
+    assert '<span class="muted">Germany</span> <code>A BER - SIL</code>' in page and '→ support given' in page
+    assert '★ <span class="muted">France</span>' in page and '<h3>Sea</h3>' in page
+
+
+def test_help_page_language_is_chosen_per_request(app):
+    """ The examples are built once and cached: none of their text may be cached in the first visitor's language. """
+    english, italian = Browser(app), italian_browser(app)
+    for browser, expected, other in [(english, 'A standoff (bounce)', 'Uno stallo'),
+                                      (italian, 'Uno stallo', 'A standoff (bounce)'),
+                                      (english, 'A standoff (bounce)', 'Uno stallo')]:
+        page = browser.text('/help')
+        assert expected in page and other not in page
+
+
+def test_italian_rulebook_is_for_logged_in_players_only(app):
+    assert Browser(app).get('/regole.pdf').status_code == 302
+    rulebook = Browser(app, 'carla').get('/regole.pdf')
+    assert rulebook.status_code == 200 and rulebook.mimetype == 'application/pdf' and rulebook.data[:4] == b'%PDF'
+    assert 'private' in rulebook.headers['Cache-Control']
