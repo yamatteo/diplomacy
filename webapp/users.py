@@ -33,7 +33,8 @@ import secrets
 import time
 from collections import namedtuple
 
-from webapp.i18n import LANGUAGES, gettext as _
+from webapp.gameplay import ALL_POWERS
+from webapp.i18n import LANGUAGES, gettext as _, power_name
 
 LOGGER = logging.getLogger(__name__)
 
@@ -267,6 +268,24 @@ class UserStore:
                 raise ValueError(_('The name "%(name)s" is already taken.', name=name))
             record['name'] = name
         return _to_user(record)
+
+    def set_powers(self, email, powers):
+        """ Sets exactly which powers the user plays (kept in `ALL_POWERS` order; none clears them), leaving every
+            other user alone. A power another user plays is refused rather than taken.
+            :return: True if the user's powers changed. """
+        wanted = [power for power in ALL_POWERS if power in set(powers)]
+        for power in sorted(set(powers) - set(ALL_POWERS)):
+            raise ValueError(_('Unknown power: %(power)s.', power=power))
+        with self._editing() as records:
+            record = self._find(records, email)
+            for other in records:
+                held = [power for power in wanted if power in (other.get('powers') or [])]
+                if other is not record and held:
+                    raise ValueError(_('%(power)s is already played by %(name)s.',
+                                       power=', '.join(power_name(power) for power in held), name=other.get('name')))
+            changed = wanted != list(record.get('powers') or [])
+            record['powers'] = wanted
+        return changed
 
     def set_lang(self, email, lang):
         """ Sets the user's interface language (one of `LANGUAGES`). :return: the updated User. """

@@ -863,7 +863,7 @@ def admin():
                    'variants': {count: {'groups': groups, 'neutral': gameplay.neutral_powers(count),
                                         'warnings': gameplay.check_assignment(count, g.users)}
                                 for count, groups in sorted(gameplay.VARIANTS.items(), reverse=True)},
-                   'default_players': gameplay.MAX_PLAYERS}
+                   'default_players': gameplay.MAX_PLAYERS, 'all_powers': gameplay.ALL_POWERS}
         if game:
             context.update(phase=game.get_current_phase(), done=game.is_game_done, deadline=deadline_text(meta, now),
                            phase_hours=meta['phase_hours'],
@@ -991,6 +991,44 @@ def admin_user_admin():
     LOGGER.info('Admin %r set admin=%s for %r', g.user.email, is_admin, email)
     flash(_('%(name)s is now an admin.', name=user.name) if is_admin else
           _('%(name)s is no longer an admin.', name=user.name), 'ok')
+    return redirect(url_for('game.admin'))
+
+
+@bp.route('/admin/users/powers', methods=['POST'])
+@admin_required
+def admin_user_powers():
+    """ Sets which powers one user plays, leaving the others alone (e.g. a friend taking over a power that nobody
+        plays yet). A power another user plays, or a neutral power of a running game, is refused. """
+    email, powers = normalize_email(request.form.get('email', '')), request.form.getlist('powers')
+    store = current_app.config['USER_STORE']
+    with open_game() as (game, meta, _store):
+        running = bool(game) and not game.is_game_done
+        neutral = [power for power in powers if running and power in meta.get('neutral', [])]
+        players = meta.get('players') if game else None
+    before = list(g.users[email].powers) if email in g.users else None
+    try:
+        if neutral:
+            raise ValueError(_('%(powers)s is neutral in this game: nobody can play it.',
+                               powers=', '.join(i18n.power_name(power) for power in neutral)))
+        changed = store.set_powers(email, powers)
+    except ValueError as exc:
+        LOGGER.warning('Admin %r could not set powers of %r to %s (now %s): %s', g.user.email, email, powers,
+                       before, i18n.english(exc))
+        flash(_('Cannot set powers: %(error)s', error=exc), 'error')
+        return redirect(url_for('game.admin'))
+    user = store.load()[email]
+    LOGGER.info('Admin %r set powers of %r: %s -> %s (changed=%s, game players=%s, neutral=%s)', g.user.email, email,
+                before, list(user.powers), changed, players, meta.get('neutral') if game else None)
+    if not changed:
+        flash(_('The powers of %(name)s were already like that.', name=user.name), 'info')
+    elif user.powers:
+        flash(_('%(name)s now plays %(powers)s.', name=user.name,
+                powers=', '.join(i18n.power_name(power) for power in user.powers)), 'ok')
+    else:
+        flash(_('%(name)s now plays no power.', name=user.name), 'ok')
+    if players in gameplay.VARIANTS:
+        for warning in gameplay.check_assignment(players, store.load()):
+            flash(warning, 'error')
     return redirect(url_for('game.admin'))
 
 

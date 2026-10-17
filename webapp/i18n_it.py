@@ -436,6 +436,15 @@ MESSAGES = {
     'A game is in progress: tick the confirmation box to change who plays what.':
         'C\'è una partita in corso: spunta la casella di conferma per cambiare chi gioca cosa.',
     'Powers assigned: %(assignment)s.': 'Potenze assegnate: %(assignment)s.',
+    'Set powers': 'Imposta le Potenze',
+    'Unknown power: %(power)s.': 'Potenza sconosciuta: %(power)s.',
+    '%(power)s is already played by %(name)s.': '%(power)s è già giocata da %(name)s.',
+    '%(powers)s is neutral in this game: nobody can play it.':
+        '%(powers)s è neutrale in questa partita: nessuno può giocarla.',
+    'Cannot set powers: %(error)s': 'Impossibile impostare le Potenze: %(error)s',
+    'The powers of %(name)s were already like that.': 'Le Potenze di %(name)s erano già queste.',
+    '%(name)s now plays %(powers)s.': '%(name)s ora gioca %(powers)s.',
+    '%(name)s now plays no power.': '%(name)s ora non gioca nessuna Potenza.',
     'Cannot add the user: %(error)s': 'Impossibile aggiungere l\'utente: %(error)s',
     'User %(name)s added. Send them the link below.': 'Utente %(name)s aggiunto. Mandagli il link qui sotto.',
     'New link for %(name)s. Send it to them; the previous link no longer works.':

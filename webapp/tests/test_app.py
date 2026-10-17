@@ -672,6 +672,90 @@ def test_admin_assigns_powers_to_random_users(tmp_path, monkeypatch):
     assert sum(1 for user in store.load().values() if user.powers) == 2
 
 
+SIX_FRIENDS = ('boss:pw-boss:-:admin\nanna:pw-anna:AUSTRIA\nbruno:pw-bruno:ENGLAND\ncarla:pw-carla:FRANCE\n'
+               'dario:pw-dario:GERMANY\nelena:pw-elena:RUSSIA\nfabio:pw-fabio:TURKEY\nginevra:pw-ginevra:-\n')
+
+
+def powers_in_file(app):
+    return {email: user.powers for email, user in app.config['USER_STORE'].load().items()}
+
+
+def test_admin_gives_a_late_friend_the_power_nobody_plays(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, SIX_FRIENDS)
+    boss = Browser(app, 'boss')
+    boss.post('/admin/new-game', confirm='yes', players='7')
+    assert 'name="order_ROM"' not in Browser(app, 'ginevra').text('/')
+    assert boss.post('/admin/users/powers', email='ginevra@example.com', powers=['ITALY']).status_code == 302
+    page = boss.text('/admin')
+    assert 'Ginevra now plays Italy.' in page and 'Nobody plays' not in page
+    assert powers_in_file(app)['ginevra@example.com'] == ('ITALY',)
+    assert powers_in_file(app)['anna@example.com'] == ('AUSTRIA',)                  # nobody else was touched
+    assert 'name="order_ROM"' in Browser(app, 'ginevra').text('/')
+
+
+def test_unplayed_power_is_reported_after_setting_powers(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, SIX_FRIENDS)
+    boss = Browser(app, 'boss')
+    boss.post('/admin/new-game', confirm='yes', players='7')
+    boss.post('/admin/users/powers', email='ginevra@example.com', powers=[])
+    assert 'already like that' in boss.text('/admin')
+    boss.post('/admin/users/powers', email='anna@example.com', powers=[])
+    page = boss.text('/admin')
+    assert 'Anna now plays no power.' in page and 'Nobody plays Austria.' in page and 'Nobody plays Italy.' in page
+
+
+def test_set_powers_refuses_a_power_somebody_else_plays(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, SIX_FRIENDS)
+    boss = Browser(app, 'boss')
+    boss.post('/admin/new-game', confirm='yes', players='7')
+    before = (tmp_path / 'users.json').read_text()
+    boss.post('/admin/users/powers', email='ginevra@example.com', powers=['FRANCE', 'ITALY'])
+    assert 'France is already played by Carla' in boss.text('/admin')
+    boss.post('/admin/users/powers', email='ginevra@example.com', powers=['ATLANTIS'])
+    assert 'Unknown power: ATLANTIS' in boss.text('/admin')
+    boss.post('/admin/users/powers', email='nobody@example.com', powers=['ITALY'])
+    assert 'There is no user nobody@example.com' in boss.text('/admin')
+    assert (tmp_path / 'users.json').read_text() == before
+
+
+def test_set_powers_refuses_neutral_powers_of_a_running_game(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, SIX_FRIENDS)
+    boss = Browser(app, 'boss')
+    boss.post('/admin/new-game', confirm='yes', players='6')
+    before = (tmp_path / 'users.json').read_text()
+    boss.post('/admin/users/powers', email='ginevra@example.com', powers=['ITALY'])
+    assert 'Italy is neutral in this game' in boss.text('/admin')
+    assert (tmp_path / 'users.json').read_text() == before
+
+
+def test_set_powers_needs_an_admin_and_a_csrf_token(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, SIX_FRIENDS)
+    before = (tmp_path / 'users.json').read_text()
+    assert Browser(app, 'anna').post('/admin/users/powers', email='ginevra@example.com',
+                                      powers=['ITALY']).status_code == 403
+    client = Browser(app, 'boss').client
+    assert client.post('/admin/users/powers', data={'email': 'ginevra@example.com', 'powers': ['ITALY']}
+                       ).status_code == 400
+    assert (tmp_path / 'users.json').read_text() == before
+
+
+def test_set_powers_of_the_store(tmp_path):
+    store = write_users(tmp_path, 'anna:pw:FRANCE\nbruno:pw:-\n')
+    assert store.set_powers('bruno@example.com', ['TURKEY', 'AUSTRIA']) is True
+    assert powers_in_file_of(store)['bruno@example.com'] == ('AUSTRIA', 'TURKEY')       # in ALL_POWERS order
+    assert store.set_powers('bruno@example.com', ['AUSTRIA', 'TURKEY']) is False
+    assert store.set_powers('anna@example.com', ['FRANCE', 'ITALY']) is True
+    assert store.set_powers('bruno@example.com', []) is True
+    assert powers_in_file_of(store) == {'anna@example.com': ('FRANCE', 'ITALY'), 'bruno@example.com': ()}
+    with pytest.raises(ValueError):
+        store.set_powers('bruno@example.com', ['ITALY'])
+    assert powers_in_file_of(store)['bruno@example.com'] == ()
+
+
+def powers_in_file_of(store):
+    return {email: user.powers for email, user in store.load().items()}
+
+
 def test_plan_assignment_without_randomness():
     from webapp import gameplay
     assert gameplay.plan_assignment(['a', 'b', 'c', 'd'], 3, random_select=False, random_powers=False) == {
