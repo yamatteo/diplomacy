@@ -19,7 +19,7 @@ import re
 import time
 
 from diplomacy import Game
-from webapp import i18n
+from webapp import i18n, rendering
 from webapp.i18n import gettext as _, ngettext
 
 LOGGER = logging.getLogger(__name__)
@@ -437,19 +437,19 @@ def render_current(game, orders_of=()):
     """ SVG of the current position. Only the orders of the powers in `orders_of` are drawn, if given:
         other powers' orders are secret until the phase is processed. """
     if not orders_of:
-        return _clean_svg(game.render(incl_orders=False, incl_abbrev=True))
+        return _clean_svg(rendering.render(game, incl_orders=False))
     copy = Game.from_dict(game.to_dict())
     for power_name in copy.powers:
         if power_name not in orders_of:
             copy.clear_orders(power_name)
-    return _clean_svg(copy.render(incl_orders=True, incl_abbrev=True))
+    return _clean_svg(rendering.render(copy))
 
 
 def render_phase(game, phase_data):
     """ SVG of a past phase with everybody's orders. """
     past = Game(map_name=game.map_name)
     past.set_phase_data(phase_data)
-    return _clean_svg(past.render(incl_orders=True, incl_abbrev=True))
+    return _clean_svg(rendering.render(past))
 
 
 def phase_orders(game, phase_data):

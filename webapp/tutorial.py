@@ -11,6 +11,7 @@ import re
 from diplomacy import Game
 
 from webapp.gameplay import _clean_svg
+from webapp.rendering import render
 from webapp.i18n import gettext as _
 
 LOGGER = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ def examples():
         for power, orders in example['orders'].items():
             game.set_orders(power, orders)
         accepted = game.get_orders()
-        svg = _crop(_clean_svg(game.render(incl_orders=True, incl_abbrev=True)), game.renderer, example['focus'])
+        svg = _crop(_clean_svg(render(game)), game.renderer, example['focus'])
         phase_data = game.process()
         rows = []
         for power, orders in example['orders'].items():

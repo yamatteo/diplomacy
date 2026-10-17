@@ -16,21 +16,21 @@
     faint dotted ring around a unit that holds because nobody ordered it and a dashed halo in the power's colour
     around a unit whose order is a guess (the user's own real orders have none).
 """
-import copy
-import functools
 import logging
 import time
 
 from diplomacy import Game
-from diplomacy.engine.renderer import Renderer, _attr
+from diplomacy.engine.renderer import _attr
 from webapp import gameplay, i18n
 from webapp.i18n import gettext as _
+from webapp.rendering import STYLE, WebRenderer, renderer_for
 
 LOGGER = logging.getLogger(__name__)
 
 GREEN, RED, GREY, WHITE = '#1a7f37', '#c62828', '#666666', '#ffffff'
 FADED = '0.35'
 MARK_RADIUS = 11
+MARK_SIDE = 16                                  # how far beside a move's line its mark sits
 RING_RADIUS, HALO_RADIUS = 26, 31
 KNOWN_FAILURES = {'bounce', 'cut', 'void', 'no convoy', 'dislodged', 'disrupted'}
 
@@ -210,8 +210,8 @@ def _mark(xml_map, kind, x, y):
     return group
 
 
-class _MarkedRenderer(Renderer):
-    """ The engine's renderer, plus the simulation's marks. `sim` is set on a copy for each render. """
+class _MarkedRenderer(WebRenderer):
+    """ The web app's renderer, plus the simulation's marks. `sim` is set on a copy for each render. """
     sim = None
 
     # -- helpers
@@ -273,18 +273,19 @@ class _MarkedRenderer(Renderer):
         node = self._last_order(xml_map, 'Layer1')
         lines = [line for line in node.childNodes if line.nodeName == 'line']
         x1, y1, x2, y2 = (float(lines[0].getAttribute(name)) for name in ('x1', 'y1', 'x2', 'y2'))
+        length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
         if self.sim.outcome[src_loc] == 'bounce':       # cut short, without the arrowhead
-            x2, y2 = (x1 + x2) / 2, (y1 + y2) / 2
+            cut = max(length / 2, min(length, STYLE.min_visible))
+            x2, y2 = x1 + (x2 - x1) / max(length, 1) * cut, y1 + (y2 - y1) / max(length, 1) * cut
+            length = cut
             for line in lines:
                 line.setAttribute('x2', '%.2f' % x2)
                 line.setAttribute('y2', '%.2f' % y2)
                 if line.hasAttribute('marker-end'):
                     line.removeAttribute('marker-end')
-            at = (x2, y2)
-        else:                                           # near the head
-            length = max(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5, 1)
-            back = min(MARK_RADIUS + 6, length / 2)
-            at = (x2 - (x2 - x1) / length * back, y2 - (y2 - y1) / length * back)
+        # The mark goes beside the middle of the visible line, so it covers neither the shaft nor the head.
+        nx, ny = -(y2 - y1) / max(length, 1), (x2 - x1) / max(length, 1)
+        at = ((x1 + x2) / 2 + nx * MARK_SIDE, (y1 + y2) / 2 + ny * MARK_SIDE)
         self._mark_outcome(xml_map, src_loc, at, node)
         return xml_map
 
@@ -298,9 +299,10 @@ class _MarkedRenderer(Renderer):
         xml_map = super()._issue_support_move_order(xml_map, loc, src_loc, dest_loc, power_name)
         if self.sim is not None and self.sim.kind.get(loc) == 'support':
             # The engine draws a cubic curve loc -> (src, src) -> dest': its point at t=0.5.
-            (x0, y0), (xs, ys) = self._get_unit_center(loc, False), self._get_unit_center(src_loc, False)
-            end = [float(value) for value in
-                   self._last_order(xml_map, 'Layer2').firstChild.getAttribute('d').split()[-1].split(',')]
+            xs, ys = self._get_unit_center(src_loc, False)
+            path = self._last_order(xml_map, 'Layer2').firstChild.getAttribute('d').split()
+            x0, y0 = (float(value) for value in path[1].split(','))      # 'M x,y C ... x,y': start and end
+            end = [float(value) for value in path[-1].split(',')]
             at = ((x0 + 6 * xs + end[0]) / 8, (y0 + 6 * ys + end[1]) / 8)
             self._mark_outcome(xml_map, loc, at, self._last_order(xml_map, 'Layer2'))
         return xml_map
@@ -310,13 +312,6 @@ class _MarkedRenderer(Renderer):
         if self.sim is not None and self.sim.kind.get(loc) == 'convoy':
             self._mark_outcome(xml_map, loc, self._midpoint(loc, src_loc), self._last_order(xml_map, 'Layer2'))
         return xml_map
-
-
-@functools.lru_cache(maxsize=None)
-def _base_renderer(map_name):
-    """ A renderer of the map, loaded once; each simulation draws with a shallow copy of it (the loaded SVG and
-        metadata are only read while rendering). """
-    return _MarkedRenderer(Game(map_name=map_name))
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -348,8 +343,8 @@ def simulate(game, meta, my_powers, guesses):
     guessed = {loc for loc, order in guesses.items() if order and loc in orders}
     simulation = Simulation(orders, codes, guessed)
 
-    renderer = copy.copy(_base_renderer(game.map_name))
-    renderer.game, renderer.sim = shown, simulation
+    renderer = renderer_for(shown, _MarkedRenderer)
+    renderer.sim = simulation
     svg = gameplay._clean_svg(renderer.render(incl_orders=True, incl_abbrev=True))     # pylint: disable=protected-access
     units = [(power.name, unit) for power in game.powers.values() for unit in power.units]
     outcomes = simulation.describe(units)
