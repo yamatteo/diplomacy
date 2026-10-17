@@ -25,6 +25,15 @@
     <button>{{ _('Change language') }}</button>
   </form>
 
+  <h2>{{ _('Order simulator') }}</h2>
+  <form method="post" action="{{ url_for('game.profile_sandbox') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label><input type="checkbox" name="sandbox" value="yes" {% if g.user.sandbox %}checked{% endif %}>
+      {{ _('Let me guess the orders of the other powers and see how they would be resolved') }}</label>
+    <button>{{ _('Save') }}</button>
+  </form>
+  <p class="muted">{{ _('Only for you: your guesses are never saved or shown to anybody, and your real orders are not changed.') }}</p>
+
   <h2>{{ _('Password') }}</h2>
   <form method="post" action="{{ url_for('game.profile_password') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">

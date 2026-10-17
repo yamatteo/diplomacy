@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
 import urllib.parse
 from datetime import datetime, timezone
@@ -20,7 +21,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay, i18n, tutorial
+from webapp import gameplay, i18n, sandbox, tutorial
 from webapp.i18n import gettext as _, ngettext
 from webapp.users import (LINK_DAYS, check_login, link_state, login_failure_reason, normalize_email,
                           password_problem, verify_password)
@@ -287,6 +288,13 @@ def order_result_label(result):
             'holds': _('holds'), 'succeeds': _('succeeds')}.get(result, result)
 
 
+@bp.app_template_filter('sim_outcome')
+def sim_outcome_label(outcome):
+    """ An outcome of `sandbox.classify` ('success', 'bounce', ...) -> what to tell the user. """
+    return {'success': _('succeeds'), 'bounce': _('bounces'), 'cut': _('is cut'), 'disrupted': _('is disrupted'),
+            'void': _('is void'), 'hold': _('holds')}.get(outcome, outcome)
+
+
 # ----------------------------------------------------------------------------------------------------------------
 # Login
 # ----------------------------------------------------------------------------------------------------------------
@@ -400,6 +408,18 @@ def profile_lang():
     return redirect(url_for('game.profile'))
 
 
+@bp.route('/profile/sandbox', methods=['POST'])
+@login_required
+def profile_sandbox():
+    """ Turns the user's order simulator on or off (checkbox `sandbox=yes`; absent means off). """
+    enabled = request.form.get('sandbox') == 'yes'
+    current_app.config['USER_STORE'].set_sandbox(g.user.email, enabled)
+    LOGGER.info('User %r turned the order simulator %s (was %s)', g.user.email, 'on' if enabled else 'off',
+                'on' if g.user.sandbox else 'off')
+    flash(_('Order simulator turned on.') if enabled else _('Order simulator turned off.'), 'ok')
+    return redirect(url_for('game.profile'))
+
+
 @bp.route('/profile/password', methods=['POST'])
 @login_required
 def profile_password():
@@ -445,6 +465,8 @@ def index():
         my_powers = gameplay.powers_of(game, meta, g.user)
         active = [power for power in my_powers if game.get_orderable_locations(power)] if not game.is_game_done else []
         choices = [{'power': power, 'choices': gameplay.order_choices(game, power)} for power in active]
+        # The order simulator (profile switch): only for someone with orders to give in a movement phase.
+        simulator = bool(g.user.sandbox and choices and game.get_current_phase()[-1] == 'M')
         history = game.get_phase_history()
         context = dict(
             my_orders_state(game, meta, my_powers),
@@ -455,6 +477,8 @@ def index():
             deadline=deadline_text(meta, now),
             my_powers=my_powers,
             choices=choices,
+            simulator=simulator,
+            guess_choices=gameplay.guess_choices(game, meta, my_powers) if simulator else [],
             seas=sorted(gameplay.sea_locations(game.map_name)),
             last_phase=history[-1].name if history else None,
             last_orders=gameplay.phase_orders(game, history[-1]) if history else None,
@@ -543,6 +567,47 @@ def orders():
                 phase=phase), 'ok')
         announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, now))
     return redirect(url_for('game.index'))
+
+
+SIMULATING = {}         # email -> lock: one simulation at a time per user (per server process)
+
+
+@bp.route('/sandbox', methods=['POST'])
+@login_required
+def simulate_orders():
+    """ The order simulator (profile switch): resolves, on a copy, the user's real orders together with the
+        guesses (`guess_<loc>=<order>`) for the other powers and answers JSON with the map and the outcomes.
+        Nothing is saved or changed, and the simulation runs after the game lock is released. """
+    if not g.user.sandbox:
+        LOGGER.warning('User %r used the order simulator while it is off', g.user.email)
+        return jsonify(ok=False, errors=[_('The order simulator is off. Turn it on in your profile.')]), 403
+    busy = SIMULATING.setdefault(g.user.email, threading.Lock())
+    if not busy.acquire(blocking=False):
+        LOGGER.info('Simulation of %r refused: the previous one is still running', g.user.email)
+        return jsonify(ok=False, errors=[_('The previous simulation is still running: try again in a moment.')]), 429
+    try:
+        with open_game() as (game, meta, _store):
+            if not game or game.is_game_done:
+                return jsonify(ok=False, errors=[_('There is no game in progress.')], reload=True), 409
+            phase = game.get_current_phase()
+            if request.form.get('phase') != phase:
+                LOGGER.warning('Stale simulation from %r: form phase=%r current phase=%s', g.user.email,
+                               request.form.get('phase'), phase)
+                return jsonify(ok=False, reload=True,
+                               errors=[_('The game moved on to %(phase)s: the page is out of date.',
+                                         phase=phase)]), 409
+            my_powers = gameplay.powers_of(game, meta, g.user)
+        guesses = {key[len('guess_'):]: value.strip() for key, value in request.form.items()
+                   if key.startswith('guess_')}
+        try:
+            result = sandbox.simulate(game, meta, my_powers, guesses)
+        except sandbox.SandboxError as exc:
+            LOGGER.info('Simulation of %r in %s refused: guesses=%s errors=%s', g.user.email, phase, guesses,
+                        [i18n.english(message) for message in exc.messages])
+            return jsonify(ok=False, errors=exc.messages), 400
+        return jsonify(ok=True, svg=result['svg'], outcomes=result['outcomes'])
+    finally:
+        busy.release()
 
 
 @bp.route('/history')

@@ -60,6 +60,65 @@ MESSAGES = {
         'Cambiando la password esci dall\'account sugli altri tuoi dispositivi.',
     'Name not changed: %(error)s': 'Nome non cambiato: %(error)s',
     'Name changed to %(name)s.': 'Nome cambiato in %(name)s.',
+    'Order simulator': 'Simulatore di ordini',
+    'Let me guess the orders of the other powers and see how they would be resolved':
+        'Voglio ipotizzare gli ordini delle altre potenze e vedere come verrebbero risolti',
+    'Save': 'Salva',
+    'Only for you: your guesses are never saved or shown to anybody, and your real orders are not changed.':
+        'Solo per te: le tue ipotesi non vengono mai salvate né mostrate a nessuno e i tuoi ordini veri non '
+        'cambiano.',
+    'Order simulator turned on.': 'Simulatore di ordini attivato.',
+    'Order simulator turned off.': 'Simulatore di ordini disattivato.',
+    'The order simulator is off. Turn it on in your profile.':
+        'Il simulatore di ordini è disattivato. Attivalo nel tuo profilo.',
+    'The previous simulation is still running: try again in a moment.':
+        'La simulazione precedente è ancora in corso: riprova tra un attimo.',
+    'The game moved on to %(phase)s: the page is out of date.':
+        'La partita è passata a %(phase)s: la pagina non è aggiornata.',
+    'The order simulator only works in movement phases.':
+        'Il simulatore di ordini funziona solo nelle fasi di movimento.',
+    'There is no unit at %(loc)s to guess an order for.': 'In %(loc)s non c\'è nessuna unità di cui ipotizzare l\'ordine.',
+    '%(loc)s is your own unit: give its order in the orders form.':
+        '%(loc)s è una tua unità: dai il suo ordine nel modulo degli ordini.',
+    '%(power)s is neutral in this game: its units just hold.':
+        '%(power)s è neutrale in questa partita: le sue unità restano ferme.',
+    '"%(order)s" is not a valid guess for %(loc)s in %(phase)s.':
+        '"%(order)s" non è un\'ipotesi valida per %(loc)s in %(phase)s.',
+    'Click a unit of another power to guess its order. The map shows your orders and your guesses and how they '
+    'would be resolved; units nobody ordered hold. Nothing is saved or shown to anybody.':
+        'Clicca su un\'unità di un\'altra potenza per ipotizzare il suo ordine. La mappa mostra i tuoi ordini e le '
+        'tue ipotesi e come verrebbero risolti; le unità senza ordine restano ferme. Niente viene salvato né '
+        'mostrato a nessuno.',
+    'Clear all guesses': 'Cancella tutte le ipotesi',
+    'What would happen': 'Cosa succederebbe',
+    'What the marks mean': 'Cosa significano i segni',
+    'Green ✓: the order works (a move arrives, a support or a convoy counts).':
+        '✓ verde: l\'ordine funziona (il movimento arriva, l\'appoggio o il trasporto contano).',
+    'Red ✕: the move bounces; its line stops half way.':
+        '✕ rossa: il movimento va in stallo; la sua linea si ferma a metà.',
+    'Red slash and faded line: the support is cut.':
+        'Barra rossa e linea sbiadita: l\'appoggio è neutralizzato.',
+    'Faded line: the convoy is disrupted.': 'Linea sbiadita: il trasporto è interrotto.',
+    'Grey ? and faded line: the order is void, for example a support for a move that does not happen.':
+        '? grigio e linea sbiadita: l\'ordine è nullo, per esempio un appoggio a un movimento che non avviene.',
+    'Red ring: the unit is dislodged.': 'Anello rosso: l\'unità è sloggiata.',
+    'Dotted ring: nobody ordered this unit, so it holds.':
+        'Anello a puntini: nessuno ha dato un ordine a questa unità, quindi resta ferma.',
+    'Dashed halo: the order is a guess. Your own orders have none.':
+        'Alone tratteggiato: l\'ordine è un\'ipotesi. I tuoi ordini non ce l\'hanno.',
+    'No guess: it holds': 'Nessuna ipotesi: resta ferma',
+    'Current guess:': 'Ipotesi attuale:',
+    'Only a simulation: nothing is saved.': 'Solo una simulazione: niente viene salvato.',
+    'Hide simulation': 'Nascondi la simulazione',
+    'Show simulation': 'Mostra la simulazione',
+    'Simulating…': 'Simulazione in corso…',
+    'Simulation failed: connection problem. Change a guess to retry.':
+        'Simulazione non riuscita: problema di connessione. Cambia un\'ipotesi per riprovare.',
+    'guess': 'ipotesi',
+    'bounces': 'va in stallo',
+    'is cut': 'è neutralizzato',
+    'is disrupted': 'è interrotto',
+    'is void': 'è nullo',
     'Language not changed: %(error)s': 'Lingua non cambiata: %(error)s',
     'Language changed to %(language)s.': 'Lingua cambiata in %(language)s.',
     'Password not changed: the current password is wrong.': 'Password non cambiata: la password attuale è errata.',

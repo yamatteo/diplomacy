@@ -14,6 +14,37 @@
   <p><strong>{{ _('Deadline:') }}</strong> {{ deadline }}</p>
 {% endif %}
 
+{% if simulator %}
+{# The order simulator (profile switch). Shown by the page's script, which replaces the real map below by the
+   simulated one (map of the server's /sandbox) until "Hide simulation". #}
+<div class="card" id="sim-bar" hidden>
+  <h2 style="margin-top: 0">{{ _('Order simulator') }}</h2>
+  <p class="muted">{{ _('Click a unit of another power to guess its order. The map shows your orders and your guesses and how they would be resolved; units nobody ordered hold. Nothing is saved or shown to anybody.') }}</p>
+  <div class="orders-actions">
+    <button type="button" id="sim-toggle"></button>
+    <button type="button" id="sim-clear" disabled>{{ _('Clear all guesses') }}</button>
+    <span id="sim-state" class="muted" role="status"></span>
+  </div>
+</div>
+<div class="card map" id="sim-map" hidden></div>
+<div class="card" id="sim-info" hidden>
+  <h3 style="margin-top: 0">{{ _('What would happen') }}</h3>
+  <ul id="sim-outcomes"></ul>
+  <details>
+    <summary>{{ _('What the marks mean') }}</summary>
+    <ul class="muted">
+      <li>{{ _('Green ✓: the order works (a move arrives, a support or a convoy counts).') }}</li>
+      <li>{{ _('Red ✕: the move bounces; its line stops half way.') }}</li>
+      <li>{{ _('Red slash and faded line: the support is cut.') }}</li>
+      <li>{{ _('Faded line: the convoy is disrupted.') }}</li>
+      <li>{{ _('Grey ? and faded line: the order is void, for example a support for a move that does not happen.') }}</li>
+      <li>{{ _('Red ring: the unit is dislodged.') }}</li>
+      <li>{{ _('Dotted ring: nobody ordered this unit, so it holds.') }}</li>
+      <li>{{ _('Dashed halo: the order is a guess. Your own orders have none.') }}</li>
+    </ul>
+  </details>
+</div>
+{% endif %}
 <div class="card map">{{ svg }}</div>
 
 {% if choices %}
@@ -62,6 +93,24 @@
       <span id="autosave-state" class="muted" role="status"></span>
     </div>
   </form>
+  {% if simulator %}
+  {# Guesses for the units of the other powers, for the simulator. Outside the form and without a name: they are
+     never submitted, and they hold no saved (secret) orders. The dialog is built from them like from the others. #}
+  <div id="guess-selects" hidden>
+    {% for entry in guess_choices %}
+      {% for item in entry.choices['items'] %}
+        <select id="guess_{{ item.loc }}" data-power="{{ entry.power|lower }}" data-kind="guess">
+          <option value="" data-group="Guess">— {{ _('No guess: it holds') }} —</option>
+          {% for group, group_orders in item.groups %}
+            <optgroup label="{{ group|order_group }}" data-group="{{ group }}">
+              {% for order in group_orders %}<option value="{{ order }}">{{ order }}</option>{% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+      {% endfor %}
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 {# Clicking one of your units on the map opens this dialog. It is built from that unit's <select> above, so it offers
@@ -74,7 +123,7 @@
   <p class="muted" id="od-current"></p>
   <div class="od-tabs" id="od-tabs"></div>
   <div id="od-list"></div>
-  <p class="muted od-foot">{{ _('The order you choose is saved right away.') }}</p>
+  <p class="muted od-foot" id="od-foot">{{ _('The order you choose is saved right away.') }}</p>
 </div></dialog>
 <script>
 (function () {
@@ -88,7 +137,9 @@
   };
   var dialog = document.getElementById('order-dialog');
   var form = document.getElementById('orders-form');
-  var mapBox = document.querySelector('.card.map');
+  var maps = document.querySelectorAll('.card.map');
+  var mapBox = maps[maps.length - 1];   // the real map (the simulator's comes before it)
+  var afterSaved = function () {};   // the simulator re-runs after your own orders are saved
   var doneButton = document.getElementById('done-button'), saveState = document.getElementById('autosave-state');
   document.documentElement.classList.add('js');   // shows the .js-only parts, hides .nojs-only
   var tabsBox = document.getElementById('od-tabs'), listBox = document.getElementById('od-list');
@@ -176,12 +227,20 @@
     var title = document.getElementById('od-title');
     title.textContent = '';
     title.appendChild(orderNode(unit));
+    var isGuess = sel.dataset.kind === 'guess';   // a simulator guess: nothing is saved
     var current = document.getElementById('od-current');
-    current.textContent = T.current + ' ';
+    current.textContent = (isGuess ? T.currentGuess : T.current) + ' ';
     current.appendChild(sel.value ? orderNode(sel.value) : document.createTextNode(sel.options[0].text));
+    var foot = document.getElementById('od-foot');
+    if (!foot.dataset.text) foot.dataset.text = foot.textContent;
+    foot.textContent = isGuess ? T.guessFoot : foot.dataset.text;
     var groups = groupsOf(sel);
     tabsBox.textContent = '';
     listBox.textContent = '';
+    if (isGuess) {
+      tabsBox.appendChild(button('od-direct' + (sel.value ? '' : ' current'),
+                                 document.createTextNode(T.noGuess), function () { choose(''); }));
+    }
     groups.direct.forEach(function (d) {
       // No order yet means the default ("— Hold —" or "— Disband —"): show that button as the current one.
       var isCurrent = d.order === sel.value || (!sel.value && sel.options[0].dataset.group === d.name);
@@ -202,11 +261,14 @@
   }
 
   // Your units on the map: <use id="unit_PAR" class="unitfrance"> (or dislodged_unit_PAR in retreat phases),
-  // clickable when the orders form has a <select> for that location and power. Run again when the map is replaced.
-  function bindUnits() {
-    mapBox.querySelectorAll('use[id^="unit_"], use[id^="dislodged_unit_"]').forEach(function (use) {
+  // clickable when the orders form has a <select> for that location and power. On the simulator's map the other
+  // powers' units are clickable too, through the <select> whose id is `extraPrefix` + the location. Run again when
+  // the map is replaced.
+  function bindUnits(box, extraPrefix) {
+    box.querySelectorAll('use[id^="unit_"], use[id^="dislodged_unit_"]').forEach(function (use) {
       var loc = use.id.replace(/^(dislodged_)?unit_/, '');
-      var sel = document.getElementById('order_' + loc.slice(0, 3));
+      var sel = document.getElementById('order_' + loc.slice(0, 3)) ||
+                (extraPrefix && document.getElementById(extraPrefix + loc.slice(0, 3)));
       if (!sel || ('unit' + sel.dataset.power) !== use.getAttribute('class')) return;
       var type = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
       use.classList.add('clickable-unit');
@@ -215,7 +277,7 @@
       });
     });
   }
-  bindUnits();
+  bindUnits(mapBox);
 
   dialog.querySelector('.od-close').addEventListener('click', function () { dialog.close(); });
   dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.close(); });  // backdrop
@@ -260,7 +322,8 @@
         showState(T.notSaved + ' ' + reply.errors.join(' '), true);
       } else {
         mapBox.innerHTML = reply.svg;
-        bindUnits();
+        bindUnits(mapBox);
+        afterSaved();
         document.getElementById('orders-summary').innerHTML = reply.summary;
         document.getElementById('status-table').innerHTML = reply.status;
         setReady(reply.ready);
@@ -300,6 +363,148 @@
       submit();
     }
   });
+
+{% if simulator %}
+  // ---- The order simulator. The guesses are the values of the hidden guess <select>s (the only copy; mirrored
+  // in sessionStorage for this phase, if the browser allows it). Every change, and every saved order of yours,
+  // asks the server (/sandbox) for the map with the orders and their outcomes, after a short pause. One request
+  // at a time. Nothing is saved on the server.
+  T.currentGuess = {{ _('Current guess:')|tojson }};
+  T.noGuess = {{ _('No guess: it holds')|tojson }};
+  T.guessFoot = {{ _('Only a simulation: nothing is saved.')|tojson }};
+  T.hideSim = {{ _('Hide simulation')|tojson }};
+  T.showSim = {{ _('Show simulation')|tojson }};
+  T.simulating = {{ _('Simulating…')|tojson }};
+  T.simOffline = {{ _('Simulation failed: connection problem. Change a guess to retry.')|tojson }};
+  T.guess = {{ _('guess')|tojson }};
+  T.dislodged = {{ 'dislodged'|order_result|tojson }};
+  T.outcomes = {success: {{ 'success'|sim_outcome|tojson }}, bounce: {{ 'bounce'|sim_outcome|tojson }},
+                cut: {{ 'cut'|sim_outcome|tojson }}, disrupted: {{ 'disrupted'|sim_outcome|tojson }},
+                void: {{ 'void'|sim_outcome|tojson }}, hold: {{ 'hold'|sim_outcome|tojson }}};
+  var SIM_URL = {{ url_for('game.simulate_orders')|tojson }};
+  var PHASE = {{ phase|tojson }};
+  var GUESSES_KEY = 'sim-guesses:' + PHASE;
+  var guessBox = document.getElementById('guess-selects');
+  var guessSelects = Array.prototype.slice.call(guessBox.querySelectorAll('select'));
+  var simBar = document.getElementById('sim-bar'), simMap = document.getElementById('sim-map');
+  var simInfo = document.getElementById('sim-info'), simList = document.getElementById('sim-outcomes');
+  var simToggle = document.getElementById('sim-toggle'), simClear = document.getElementById('sim-clear');
+  var simState = document.getElementById('sim-state');
+  var simShown = true, simReady = false;   // simReady: a simulated map has arrived, so it can replace the real one
+  var simTimer = null, simulating = false, simAgain = false;
+  try { simShown = sessionStorage.getItem('sim-hidden') !== 'yes'; } catch (e) {}
+
+  function guesses() {
+    var result = {};
+    guessSelects.forEach(function (sel) { if (sel.value) result[sel.id.slice('guess_'.length)] = sel.value; });
+    return result;
+  }
+
+  function saveGuesses() {
+    simClear.disabled = Object.keys(guesses()).length === 0;
+    try { sessionStorage.setItem(GUESSES_KEY, JSON.stringify(guesses())); } catch (e) {}
+  }
+
+  function restoreGuesses() {
+    try {
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {   // guesses of other phases are void
+        var key = sessionStorage.key(i);
+        if (key.indexOf('sim-guesses:') === 0 && key !== GUESSES_KEY) sessionStorage.removeItem(key);
+      }
+      var saved = JSON.parse(sessionStorage.getItem(GUESSES_KEY) || '{}');
+      guessSelects.forEach(function (sel) {
+        var order = saved[sel.id.slice('guess_'.length)];
+        if (order && Array.prototype.some.call(sel.options, function (o) { return o.value === order; })) sel.value = order;
+      });
+    } catch (e) {}
+  }
+
+  function showSimState(text, isError) {
+    simState.textContent = text;
+    simState.classList.toggle('error-text', !!isError);
+  }
+
+  // The simulated map replaces the real one once it has arrived, unless it is hidden.
+  function updateView() {
+    var show = simShown && simReady;
+    simBar.hidden = false;
+    simMap.hidden = simInfo.hidden = !show;
+    mapBox.hidden = show;
+    simToggle.textContent = simShown ? T.hideSim : T.showSim;
+  }
+
+  function showOutcomes(outcomes) {
+    simList.textContent = '';
+    outcomes.forEach(function (item) {
+      if (!item.order && !item.dislodged) return;
+      var li = document.createElement('li');
+      li.appendChild(orderNode(item.order || item.unit));
+      li.appendChild(document.createTextNode(' — ' + T.outcomes[item.outcome] + (item.dislodged ? ', ' + T.dislodged : '') +
+                                             (item.guess ? ' (' + T.guess + ')' : '')));
+      simList.appendChild(li);
+    });
+  }
+
+  function simulate() {
+    clearTimeout(simTimer);
+    if (!simShown) return;
+    if (simulating) { simAgain = true; return; }
+    simulating = true;
+    simAgain = false;
+    showSimState(T.simulating);
+    var data = new FormData();
+    data.set('csrf', form.elements.csrf.value);
+    data.set('phase', PHASE);
+    var current = guesses();
+    Object.keys(current).forEach(function (loc) { data.set('guess_' + loc, current[loc]); });
+    fetch(SIM_URL, {method: 'POST', body: data, credentials: 'same-origin'}).then(function (response) {
+      // Anything but JSON (e.g. the login page after a redirect, an error page): reload to show what happened.
+      return (response.headers.get('Content-Type') || '').indexOf('application/json') < 0 ? {reload: true} : response.json();
+    }).then(function (reply) {
+      if (reply.reload) {
+        simAgain = false;
+        window.location.reload();
+      } else if (!reply.ok) {
+        showSimState(reply.errors.join(' '), true);
+      } else {
+        simMap.innerHTML = reply.svg;
+        bindUnits(simMap, 'guess_');
+        showOutcomes(reply.outcomes);
+        simReady = true;
+        updateView();
+        showSimState('');
+      }
+    }).catch(function () {
+      showSimState(T.simOffline, true);
+    }).then(function () {
+      simulating = false;
+      if (simAgain) simulate();
+    });
+  }
+
+  function scheduleSimulation() {
+    clearTimeout(simTimer);
+    simTimer = setTimeout(simulate, 250);
+  }
+
+  guessBox.addEventListener('change', function () { saveGuesses(); scheduleSimulation(); });
+  simClear.addEventListener('click', function () {
+    guessSelects.forEach(function (sel) { sel.value = ''; });
+    saveGuesses();
+    simulate();
+  });
+  simToggle.addEventListener('click', function () {
+    simShown = !simShown;
+    try { sessionStorage.setItem('sim-hidden', simShown ? 'no' : 'yes'); } catch (e) {}
+    updateView();
+    simulate();
+  });
+  afterSaved = scheduleSimulation;
+  restoreGuesses();
+  saveGuesses();
+  updateView();
+  simulate();
+{% endif %}
 
   window.addEventListener('beforeunload', function (e) {
     if (saving || saveAgain) e.preventDefault();

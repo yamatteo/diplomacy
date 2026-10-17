@@ -1,7 +1,7 @@
 """ Players' accounts, kept by the app in ``users.json`` in the data dir (managed from the admin page, not by hand).
 
     One account per email address: ``{"users": [{"email", "name", "powers", "admin", "password",
-    "session_version", "link", "created_at", "lang"}]}``.
+    "session_version", "link", "created_at", "lang", "sandbox"}]}``.
 
     - ``email`` is the account's id: stored lowercase, unique, never changed. Sessions, push subscriptions and
       logs refer to users by it.
@@ -10,6 +10,8 @@
     - ``password`` is a PBKDF2 hash (``pbkdf2_sha256$iterations$salt$hash``), or null until the user sets one.
     - ``lang`` is the interface language the user chose on their profile page ('en' or 'it'; missing: the site's
       default, see webapp/i18n.py). It is also the language of their push notifications.
+    - ``sandbox`` (bool, missing: false) turns on the order simulator for the user (see webapp/sandbox.py); they
+      switch it on and off on their profile page.
     - ``session_version`` goes up on every password change: sessions made before it are logged out.
     - ``link`` is the pending set-password link, ``{"hash": sha256(token), "expires"}``, or null. The admin
       issues it (for new users and forgotten passwords) and sends it to the user; it works once, for
@@ -35,7 +37,8 @@ from webapp.i18n import LANGUAGES, gettext as _
 
 LOGGER = logging.getLogger(__name__)
 
-User = namedtuple('User', 'email name powers is_admin password session_version link lang', defaults=(None,))
+User = namedtuple('User', 'email name powers is_admin password session_version link lang sandbox',
+                  defaults=(None, False))
 
 PBKDF2_ITERATIONS = 600_000         # about 0.2 s per login; the count is stored in each hash, so it can change
 LINK_DAYS = 7
@@ -122,7 +125,8 @@ def _to_user(record):
                 is_admin=bool(record.get('admin')), password=record.get('password'),
                 session_version=int(record.get('session_version') or 0),
                 link=dict(link) if link else None,
-                lang=record.get('lang') if record.get('lang') in LANGUAGES else None)
+                lang=record.get('lang') if record.get('lang') in LANGUAGES else None,
+                sandbox=bool(record.get('sandbox')))
 
 
 def link_state(user, now):
@@ -271,6 +275,13 @@ class UserStore:
         with self._editing() as records:
             record = self._find(records, email)
             record['lang'] = lang
+        return _to_user(record)
+
+    def set_sandbox(self, email, enabled):
+        """ Turns the user's order simulator on or off. :return: the updated User. """
+        with self._editing() as records:
+            record = self._find(records, email)
+            record['sandbox'] = bool(enabled)
         return _to_user(record)
 
     def set_admin(self, email, is_admin):

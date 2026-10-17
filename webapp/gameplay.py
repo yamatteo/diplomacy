@@ -307,9 +307,11 @@ def order_loc(order):
     return order.split()[1][:3]
 
 
-def order_choices(game, power_name):
+def order_choices(game, power_name, include_current=True):
     """ Describes what a power can order in the current phase, for the orders form.
 
+        :param include_current: False leaves ``current`` empty, so the saved (secret) orders are not read at all:
+            used for the simulator's guess selects of other powers.
         :return: dict with ``phase_type``, ``note`` (what is expected), ``default`` (what an empty choice means),
             ``limit`` (max number of orders, or None) and ``items``: one per orderable location, each with
             ``loc``, ``label``, ``current`` (submitted order or '') and ``groups`` [(group name, [orders])].
@@ -317,7 +319,7 @@ def order_choices(game, power_name):
     power = game.get_power(power_name)
     phase_type = game.get_current_phase()[-1]
     possible = game.get_all_possible_orders()
-    current = {order_loc(order): order for order in game.get_orders(power_name)}
+    current = {order_loc(order): order for order in game.get_orders(power_name)} if include_current else {}
     units = {unit.lstrip('*')[2:5]: unit for unit in list(power.units) + list(power.retreats)}
     build_count = len(power.centers) - len(power.units)
     note, default, limit = '', 'Hold', None
@@ -344,6 +346,18 @@ def order_choices(game, power_name):
                       'current': current.get(loc, ''),
                       'groups': [(name, sorted(groups[name])) for name in ORDER_GROUPS if name in groups]})
     return {'phase_type': phase_type, 'note': note, 'default': default, 'limit': limit, 'items': items}
+
+
+def guess_choices(game, meta, my_powers):
+    """ What the simulator's page offers to guess: `order_choices` (without the saved orders, which are secret) of
+        every power that is not the user's and not neutral (its units just hold), in the current phase.
+
+        :return: [{'power', 'choices'}] like the orders form's `choices`, only for powers with units to order.
+    """
+    neutral = set(meta.get('neutral', []))
+    return [{'power': power, 'choices': order_choices(game, power, include_current=False)}
+            for power in game.powers
+            if power not in my_powers and power not in neutral and game.get_orderable_locations(power)]
 
 
 def submit_orders(game, meta, power_name, chosen, ready, now):
