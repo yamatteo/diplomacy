@@ -35,6 +35,8 @@ RECORD_SIZE = 4096
 MAX_PAYLOAD_BYTES = RECORD_SIZE - 16 - 1 - 86
 DEFAULT_TTL = 24 * 3600         # how long the push service keeps a message for an offline device (seconds)
 TIMEOUT = 10                    # seconds per request to a push service
+# Push services that refuse the Topic header: Apple answers 400 BadWebPushTopic even for a valid one like 'phase'.
+NO_TOPIC_HOST_SUFFIXES = ('push.apple.com',)
 
 
 def b64url(data):
@@ -175,10 +177,13 @@ def send(subscription, data, vapid_key, subject, ttl=DEFAULT_TTL, topic=None, ur
         :param subject: VAPID contact, ``mailto:...`` or the site's https URL (push services may use it to warn
             about problems; Apple refuses ``localhost``).
         :param topic: optional label (url-safe, max 32 characters); a newer message with the same topic replaces
-            an undelivered older one on the push service.
+            an undelivered older one on the push service. Not sent to NO_TOPIC_HOST_SUFFIXES.
     """
     endpoint = subscription['endpoint']
     who = describe_endpoint(endpoint)
+    host = (urllib.parse.urlsplit(endpoint).hostname or '').lower()
+    if topic and any(host == suffix or host.endswith('.' + suffix) for suffix in NO_TOPIC_HOST_SUFFIXES):
+        topic = None
     body = encrypt(subscription, json.dumps(data, separators=(',', ':')).encode('utf-8'))
     headers = {'Authorization': vapid_key.authorization(endpoint, subject, time.time() if now is None else now),
                'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream',

@@ -99,6 +99,10 @@ def test_send_delivers_encrypted_json_and_reports_gone_subscriptions(tmp_path, c
     assert subscription['endpoint'] not in caplog.text          # capability URL: never logged
     assert webpush.describe_endpoint(subscription['endpoint']) in caplog.text
 
+    apple = dict(subscription, endpoint='https://web.push.apple.com/QGdk9x')
+    assert webpush.send(apple, {}, key, 'https://example.com/', topic='phase', opener=service).ok
+    assert service.requests[1].get_header('Topic') is None      # Apple refuses it (400 BadWebPushTopic)
+
     gone = webpush.send(subscription, {}, key, 'https://example.com/', opener=FakePushService(410))
     assert gone.gone and not gone.ok and gone.detail == 'expired'
     unreachable = webpush.send(subscription, {}, key, 'https://example.com/',

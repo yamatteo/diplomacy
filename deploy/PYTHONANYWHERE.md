@@ -44,7 +44,7 @@ There is no background process: a phase is processed when someone opens a page a
 
 ## Notifications and the external scheduler
 
-Players enable push notifications on the **Notifications** page (on iPhone, after adding the site to the home screen). They get one when a new phase needs their orders, and reminders 12 and 2 hours before the deadline if they are not done (change with `os.environ['DIPLOMACY_REMINDER_HOURS'] = '24,3'` in the WSGI file; empty for none). Nothing to install on the server: the push services of all browsers are on the free-tier allowlist. The server's key is `~/diplomacy-data/vapid_private.pem`; never delete it, or every player has to enable notifications again.
+Players enable push notifications on the **Notifications** page (on iPhone, after adding the site to the home screen). They get one when a new phase needs their orders, and reminders 36, 24, 12 and 2 hours before the deadline if they are not done (change with `os.environ['DIPLOMACY_REMINDER_HOURS'] = '24,3'` in the WSGI file; empty for none). Nothing to install on the server: the push services of all browsers are on the free-tier allowlist. The server's key is `~/diplomacy-data/vapid_private.pem`; never delete it, or every player has to enable notifications again.
 
 New-phase notifications go out whenever a phase is processed. Reminders, and processing when a deadline passes, need a request to the site, so let a free external scheduler call it every 5 minutes:
 

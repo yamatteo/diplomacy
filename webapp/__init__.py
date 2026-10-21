@@ -10,7 +10,7 @@
       (default: en). Anonymous visitors get their browser's language. See webapp/i18n.py.
     - DIPLOMACY_CRON_TOKEN: enables /cron/tick?token=... for an external scheduler (see deploy/PYTHONANYWHERE.md).
     - DIPLOMACY_REMINDER_HOURS: when to remind players who are not done, in hours before the deadline
-      (default: 12,2; empty: no reminders).
+      (default: 36,24,12,2; empty: no reminders).
     - DIPLOMACY_PUSH_CONTACT: contact sent to push services with each notification, e.g. mailto:you@example.com
       (default: the site's URL).
 
@@ -40,6 +40,7 @@ from webapp.users import UserStore, normalize_email, users_summary
 
 LOGGER = logging.getLogger('webapp')
 LOG_FORMAT = '%(asctime)s %(levelname)s [pid %(process)d] [%(request_id)s] %(name)s: %(message)s'
+DEFAULT_REMINDER_HOURS = (36.0, 24.0, 12.0, 2.0)   # deadline reminders, hours before the deadline
 
 
 class RequestIdFilter(logging.Filter):
@@ -130,7 +131,7 @@ def create_app():
         'LANGUAGE': os.environ.get('DIPLOMACY_LANGUAGE', i18n.DEFAULT_LANGUAGE).strip().lower(),
         'PUSH_CONTACT': os.environ.get('DIPLOMACY_PUSH_CONTACT', ''),
         'CRON_TOKEN': os.environ.get('DIPLOMACY_CRON_TOKEN', ''),
-        'REMINDER_HOURS': (12.0, 2.0),
+        'REMINDER_HOURS': DEFAULT_REMINDER_HOURS,
     }
     setup_logging(config['LOG_FILE'], os.environ.get('DIPLOMACY_LOG_LEVEL', 'DEBUG').upper())
 
@@ -143,8 +144,8 @@ def create_app():
                 raise ValueError('hours must be positive')
         except ValueError as exc:
             LOGGER.error('Bad DIPLOMACY_REMINDER_HOURS %r (%s): using the default %s', raw_hours, exc,
-                         (12.0, 2.0))
-            config['REMINDER_HOURS'] = (12.0, 2.0)
+                         DEFAULT_REMINDER_HOURS)
+            config['REMINDER_HOURS'] = DEFAULT_REMINDER_HOURS
 
     try:
         ZoneInfo(config['TIMEZONE'])
