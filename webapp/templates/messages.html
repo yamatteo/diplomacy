@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Messages') }} · Diplomacy{% endblock %}
+{% block content %}
+<h1>{{ _('Messages') }}</h1>
+{% if not power %}
+  <div class="card muted">{{ _('You do not play a power in this game, so you have no messages.') }}</div>
+{% else %}
+  {% if my_powers|length > 1 %}
+    <div class="card phases">
+      {{ _('Messages of:') }}
+      {% for p in my_powers %}
+        {% if p == power %}<strong>{{ p|power_name }}</strong>{% else %}<a href="{{ url_for('game.messages_page', **{'as': p}) }}">{{ p|power_name }}</a>{% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+  <p class="muted">{{ _('Messages are private: only you and the other player can read them, except those to everyone. Reload the page to see new ones.') }}</p>
+  <div class="card table-wrap">
+    <table>
+      <tr><th>{{ _('Conversation') }}</th><th>{{ _('Unread') }}</th><th>{{ _('Messages') }}</th><th>{{ _('Last message') }}</th></tr>
+      {% for c in conversations %}
+        <tr>
+          <td><a href="{{ url_for('game.message_thread', other=c.other, **{'as': power}) }}">{% if c.other == 'GLOBAL' %}{{ _('Everyone') }}{% else %}{{ c.other|power_name }}{% endif %}</a></td>
+          <td>{% if c.unread %}<strong>{{ c.unread }}</strong>{% else %}<span class="muted">0</span>{% endif %}</td>
+          <td>{{ c.total }}</td>
+          <td>{{ c.last or '—' }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

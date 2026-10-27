@@ -82,6 +82,7 @@
     {% if g.user %}
       <a href="{{ url_for('game.index') }}">{{ _('Game') }}</a>
       <a href="{{ url_for('game.history') }}">{{ _('History') }}</a>
+      <a href="{{ url_for('game.messages_page') }}">{% if g.unread_messages %}<strong>{{ _('Messages (%(count)d)', count=g.unread_messages) }}</strong>{% else %}{{ _('Messages') }}{% endif %}</a>
       <a href="{{ url_for('game.notifications') }}">{{ _('Notifications') }}</a>
       {% if g.user.is_admin %}<a href="{{ url_for('game.admin') }}">{{ _('Admin') }}</a>{% endif %}
     {% endif %}

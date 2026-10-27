@@ -19,7 +19,7 @@ import re
 import time
 
 from diplomacy import Game
-from webapp import i18n, rendering
+from webapp import i18n, messages, rendering
 from webapp.i18n import gettext as _, ngettext
 
 LOGGER = logging.getLogger(__name__)
@@ -498,4 +498,4 @@ def game_summary(game, meta, users):
     """ Compact description of the game for /debug/info and logs. Contains no orders. """
     return {'game_id': game.game_id, 'map': game.map_name, 'phase': game.get_current_phase(),
             'done': game.is_game_done, 'outcome': game.outcome, 'phases_played': len(game.state_history),
-            'meta': meta, 'status': power_status(game, meta, users)}
+            'messages': messages.counts(game), 'meta': meta, 'status': power_status(game, meta, users)}

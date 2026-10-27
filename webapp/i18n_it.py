@@ -724,4 +724,24 @@ MESSAGES = {
     'convoy made': 'trasporto fatto',
     'holds': 'resta ferma',
     'succeeds': 'riesce',
+    'Messages (%(count)d)': 'Messaggi (%(count)d)',
+    'Everyone': 'Tutti',
+    'You cannot send messages like that.': 'Non puoi inviare messaggi in questo modo.',
+    'The message must have between 1 and %(max)d characters.':
+        'Il messaggio deve avere da 1 a %(max)d caratteri.',
+    'To everyone.': 'A tutti.',
+    'To %(power)s.': 'A %(power)s.',
+    'Message from %(power)s': 'Messaggio da %(power)s',
+    'You do not play a power in this game, so you have no messages.':
+        'Non giochi nessuna potenza in questa partita, quindi non hai messaggi.',
+    'Messages of:': 'Messaggi di:',
+    'Messages are private: only you and the other player can read them, except those to everyone. Reload the page to see new ones.':
+        "I messaggi sono privati: solo tu e l'altro giocatore potete leggerli, tranne quelli a tutti. Ricarica la pagina per vedere i nuovi.",
+    'Conversation': 'Conversazione',
+    'Unread': 'Da leggere',
+    'Last message': 'Ultimo messaggio',
+    'All conversations': 'Tutte le conversazioni',
+    'No messages yet.': 'Ancora nessun messaggio.',
+    'Your message to %(to)s:': 'Il tuo messaggio per %(to)s:',
+    'Send': 'Invia',
 }

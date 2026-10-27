@@ -21,7 +21,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay, i18n, sandbox, tutorial
+from webapp import gameplay, i18n, messages, sandbox, tutorial
 from webapp.i18n import gettext as _, ngettext
 from webapp.users import (LINK_DAYS, check_login, link_state, login_failure_reason, normalize_email,
                           password_problem, verify_password)
@@ -95,7 +95,14 @@ def open_game():
             g.map_name = game.map_name
             announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, time.time()))
             send_due_reminders(game, meta, store, time.time())
+            refresh_unread(game, meta)
         yield game, meta, store
+
+
+def refresh_unread(game, meta):
+    """ Sets `g.unread_messages` (shown in the nav) for the logged-in user. Only views that open the game have it. """
+    if g.get('user'):
+        g.unread_messages = messages.total_unread(game, meta, g.user.email, gameplay.powers_of(game, meta, g.user))
 
 
 def announce_processed(game, meta, processed):
@@ -634,6 +641,121 @@ def history(phase=None):
             'orders': gameplay.phase_orders(game, by_name[phase]),
         }
     return render_template('history.html', **context)
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Messages between powers (see webapp/messages.py). Their text is never logged and never shown but to the two sides.
+# ----------------------------------------------------------------------------------------------------------------
+def other_label(other):
+    """ 'GLOBAL' -> 'Everyone'; a power -> its name. """
+    return _('Everyone') if other == messages.GLOBAL else i18n.power_name(other)
+
+
+def message_views(game, power, thread):
+    """ The messages of a conversation as dicts for the template. """
+    return [{'sender': message.sender, 'recipient': message.recipient, 'mine': message.sender == power,
+             'phase': message.phase, 'time': format_time(message.time_sent / 1e6), 'text': message.message}
+            for message in thread]
+
+
+@bp.route('/messages')
+@login_required
+def messages_page():
+    """ The conversations of one of the user's powers, with their unread counts. """
+    with open_game() as (game, meta, _store):
+        if not game:
+            return redirect(url_for('game.index'))
+        my_powers = gameplay.powers_of(game, meta, g.user)
+        power = request.args.get('as') or (my_powers[0] if my_powers else None)
+        if power is not None and power not in my_powers:
+            LOGGER.warning('Messages page: %r asked for %r, which they do not play (%s)', g.user.email, power,
+                           my_powers)
+            abort(404)
+        context = {'my_powers': my_powers, 'power': power, 'conversations': []}
+        if power:
+            counts = messages.unread(game, meta, g.user.email, power, my_powers)
+            for other in messages.recipients(game, meta, g.users, my_powers):
+                thread = messages.conversation(game, power, other)
+                context['conversations'].append({'other': other, 'unread': counts.get(other, 0), 'total': len(thread),
+                                                 'last': format_time(thread[-1].time_sent / 1e6) if thread else None})
+    return render_template('messages.html', **context)
+
+
+def notify_message(game, meta, message, sender_email):
+    """ Queues the push notification of a new message: to the players of the recipient power (everybody for a global
+        message), never to whoever plays the sender, and never with the text. """
+    players = gameplay.players_by_power(game, meta, g.users)
+    excluded = {sender_email, players.get(message.sender)}
+    if message.recipient == messages.GLOBAL:
+        targets = set(players.values()) - excluded
+    else:
+        targets = {players[message.recipient]} - excluded if message.recipient in players else set()
+    tag = 'msg-%s-%s' % (message.sender, message.recipient)
+    topic = tag if len(tag) <= 32 and re.fullmatch(r'[A-Za-z0-9_-]+', tag) else None
+    for email in sorted(targets):
+        user = g.users[email]
+        powers = gameplay.powers_of(game, meta, user)
+        if message.recipient == messages.GLOBAL:
+            as_power = powers[0] if powers else None
+            url_args = {'other': messages.GLOBAL}
+        else:
+            as_power = message.recipient
+            url_args = {'other': message.sender}
+        if as_power:
+            url_args['as'] = as_power
+        with i18n.using(recipient_lang(email)):
+            if message.recipient == messages.GLOBAL:
+                body = _('To everyone.')
+            else:
+                body = _('To %(power)s.', power=i18n.power_name(message.recipient))
+            data = {'title': _('Message from %(power)s', power=i18n.power_name(message.sender)), 'body': body,
+                    'url': url_for('game.message_thread', **url_args), 'tag': tag}
+        queue_notification([email], data, topic=topic, ttl=7 * 86400, channel='messages')
+    LOGGER.info('Queued message notifications (%s -> %s, time_sent=%s) to %s', message.sender, message.recipient,
+                message.time_sent, sorted(targets))
+
+
+@bp.route('/messages/<other>', methods=['GET', 'POST'])
+@login_required
+def message_thread(other):
+    """ One conversation (GET: reading it marks it read) and its send form (POST: sends a message). """
+    posting = request.method == 'POST'
+    with open_game() as (game, meta, store):
+        if not game:
+            return redirect(url_for('game.index'))
+        my_powers = gameplay.powers_of(game, meta, g.user)
+        allowed = messages.recipients(game, meta, g.users, my_powers)
+        power = (request.form if posting else request.args).get('as') or (my_powers[0] if my_powers else None)
+        if power not in my_powers or other not in allowed:
+            LOGGER.warning('Refused messages %s by %r: power %r (plays %s), conversation %r (allowed %s)',
+                           request.method, g.user.email, power, my_powers, other, allowed)
+            if posting:
+                flash(_('You cannot send messages like that.'), 'error')
+                return redirect(url_for('game.messages_page'))
+            abort(404)
+        draft, status = '', 200
+        if posting:
+            draft = request.form.get('text', '')
+            try:
+                message = messages.send(game, power, other, draft)
+            except ValueError as error:
+                LOGGER.warning('Refused message from %s (%r) to %s: %s', power, g.user.email, other, error)
+                flash(_('The message must have between 1 and %(max)d characters.', max=messages.MAX_LENGTH), 'error')
+                status = 400
+            else:
+                store.save(game, meta)
+                LOGGER.info('Message sent: from=%s by=%r to=%s phase=%s length=%d time_sent=%s', power, g.user.email,
+                            other, message.phase, len(message.message), message.time_sent)
+                notify_message(game, meta, message, g.user.email)
+                return redirect(url_for('game.message_thread', other=other, **{'as': power}))
+        thread = messages.conversation(game, power, other)
+        if thread and messages.mark_read(meta, g.user.email, power, other, thread[-1].time_sent):
+            store.save(game, meta)
+            LOGGER.debug('Read state of %r: %s:%s up to %s', g.user.email, power, other, thread[-1].time_sent)
+        refresh_unread(game, meta)
+        context = {'my_powers': my_powers, 'power': power, 'other': other, 'other_label': other_label(other),
+                   'thread': message_views(game, power, thread), 'draft': draft, 'max_length': messages.MAX_LENGTH}
+    return render_template('message_thread.html', **context), status
 
 
 # ----------------------------------------------------------------------------------------------------------------

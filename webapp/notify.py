@@ -3,8 +3,9 @@
     ``subscriptions.json`` in the data dir lists the browsers (phones, computers) where a user enabled
     notifications: ``{"subscriptions": [{"user", "endpoint", "keys", "created_at", "agent", "last_ok",
     "last_error", "channels"}]}`` (``channels``: which kinds of notifications the device gets, a subset of
-    `CHANNELS`; an entry without the field gets all of them). It has its own lock, separate from the game's, so delivering notifications never holds up
-    the game. Endpoints are secret capability URLs: logs and /debug/info only show `webpush.describe_endpoint()`.
+    `CHANNELS`; an entry without the field gets all of them). It has its own lock, separate from the game's, so
+    delivering notifications never holds up the game. Endpoints are secret capability URLs: logs and /debug/info
+    only show `webpush.describe_endpoint()`.
 
     The VAPID key is ``vapid_private.pem`` in the data dir. Deleting it invalidates every subscription.
 """
@@ -199,9 +200,9 @@ class Notifier:
             results[entry['endpoint']] = result
             by_user[entry['user']].append(result)
         gone = self.store.record(results, now) if results else []
-        LOGGER.info('Notification %r (topic=%s, channel=%s) to %s: %d devices (%d skipped by channel), %d delivered, %d gone (removed: %s), '
-                    'users without devices: %s, in %.0f ms', data.get('title'), topic, channel, sorted(users),
-                    len(entries), len(everything) - len(entries),
+        LOGGER.info('Notification %r (topic=%s, channel=%s) to %s: %d devices (%d skipped by channel), %d delivered, '
+                    '%d gone (removed: %s), users without devices: %s, in %.0f ms', data.get('title'), topic, channel,
+                    sorted(users), len(entries), len(everything) - len(entries),
                     sum(result.ok for result in results.values()), len(gone),
                     [webpush.describe_endpoint(endpoint) for endpoint in gone],
                     sorted(user for user, user_results in by_user.items() if not user_results),
