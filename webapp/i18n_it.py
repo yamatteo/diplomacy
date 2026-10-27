@@ -284,6 +284,14 @@ MESSAGES = {
         'Android: tocca l\'icona a sinistra dell\'indirizzo, poi <em>Autorizzazioni</em>; su iPhone: '
         '<em>Impostazioni → Notifiche → Diplomacy</em>), poi ricarica questa pagina.',
     'Your devices': 'I tuoi dispositivi',
+    "Choose what each device gets. <em>Turns</em>: a new phase, deadline reminders and the end of the game. "
+    "<em>Messages</em>: messages from other players.":
+        'Scegli cosa riceve ogni dispositivo. <em>Turni</em>: una nuova fase, i promemoria prima della scadenza e '
+        'la fine della partita. <em>Messaggi</em>: i messaggi degli altri giocatori.',
+    'Notify me about': 'Avvisami per',
+    'Turns': 'Turni',
+    'Messages': 'Messaggi',
+    'Device settings saved.': 'Impostazioni del dispositivo salvate.',
     'Device': 'Dispositivo',
     'Since': 'Dal',
     'Last delivered': 'Ultima consegna',

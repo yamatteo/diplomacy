@@ -2,7 +2,8 @@
 
     ``subscriptions.json`` in the data dir lists the browsers (phones, computers) where a user enabled
     notifications: ``{"subscriptions": [{"user", "endpoint", "keys", "created_at", "agent", "last_ok",
-    "last_error"}]}``. It has its own lock, separate from the game's, so delivering notifications never holds up
+    "last_error", "channels"}]}`` (``channels``: which kinds of notifications the device gets, a subset of
+    `CHANNELS`; an entry without the field gets all of them). It has its own lock, separate from the game's, so delivering notifications never holds up
     the game. Endpoints are secret capability URLs: logs and /debug/info only show `webpush.describe_endpoint()`.
 
     The VAPID key is ``vapid_private.pem`` in the data dir. Deleting it invalidates every subscription.
@@ -19,12 +20,20 @@ from webapp import webpush
 
 LOGGER = logging.getLogger(__name__)
 
+CHANNELS = ('turns', 'messages')    # turns: new phase, reminders, game over; messages: from other players
 MAX_DEVICES_PER_USER = 10       # oldest subscriptions beyond this are dropped (stale browsers pile up otherwise)
 
 
 def device_id(endpoint):
     """ Short stable id of a subscription, for forms and logs (the endpoint itself is secret). """
     return hashlib.sha256(endpoint.encode()).hexdigest()[:16]
+
+
+def channels_of(entry):
+    """ The channels a subscription receives, in the fixed order of `CHANNELS` (all if the entry has no field). """
+    if 'channels' not in entry:
+        return list(CHANNELS)
+    return [channel for channel in CHANNELS if channel in entry['channels']]
 
 
 class SubscriptionStore:
@@ -79,9 +88,11 @@ class SubscriptionStore:
             entries = self._read()
             previous = [entry for entry in entries if entry['endpoint'] == endpoint]
             entries = [entry for entry in entries if entry['endpoint'] != endpoint]
+            keep = bool(previous) and previous[0]['user'] == user       # else (new, or moved) all channels
             entries.append({'user': user, 'endpoint': endpoint, 'keys': subscription['keys'],
                             'created_at': previous[0]['created_at'] if previous else now, 'agent': agent[:200],
-                            'last_ok': previous[0].get('last_ok') if previous else None, 'last_error': None})
+                            'last_ok': previous[0].get('last_ok') if previous else None, 'last_error': None,
+                            'channels': channels_of(previous[0]) if keep else list(CHANNELS)})
             mine = [entry for entry in entries if entry['user'] == user]
             dropped = mine[:-MAX_DEVICES_PER_USER]
             entries = [entry for entry in entries if entry not in dropped]
@@ -102,6 +113,22 @@ class SubscriptionStore:
             if len(kept) != len(entries):
                 self._write(kept)
         return len(kept) != len(entries)
+
+    def set_channels(self, user, device, channels):
+        """ Sets the channels of the subscription of `user` with this device id. :return: True if it was found. """
+        channels = [channel for channel in CHANNELS if channel in channels]
+        with self._locked():
+            entries = self._read()
+            for entry in entries:
+                if entry['user'] == user and device_id(entry['endpoint']) == device:
+                    old = channels_of(entry)
+                    entry['channels'] = channels
+                    self._write(entries)
+                    break
+            else:
+                return False
+        LOGGER.info('Push device %s of %r: channels %s -> %s', device, user, old, channels)
+        return True
 
     def record(self, results, now):
         """ Stores delivery outcomes ({endpoint: SendResult}) and forgets subscriptions the push service says no
@@ -131,7 +158,8 @@ def describe_device(entry):
     """ What a user (or /debug/info) may see of a subscription. """
     return {'id': device_id(entry['endpoint']), 'service': webpush.describe_endpoint(entry['endpoint']),
             'agent': entry.get('agent', ''), 'created_at': entry.get('created_at'), 'last_ok': entry.get('last_ok'),
-            'last_error': entry.get('last_error')}
+            'last_error': entry.get('last_error'),
+            'channels': channels_of(entry)}
 
 
 class Notifier:
@@ -147,16 +175,18 @@ class Notifier:
     def public_key(self):
         return self.vapid_key.public_key
 
-    def send(self, users, data, site_url, topic=None, ttl=webpush.DEFAULT_TTL):
+    def send(self, users, data, site_url, topic=None, ttl=webpush.DEFAULT_TTL, channel=None):
         """ Delivers `data` ({"title", "body", "url", "tag"}, read by the service worker) to every device of
             `users`. Never raises: failures are logged and recorded on the subscription.
 
+            :param channel: one of `CHANNELS`: only devices that have it; None: every device.
             :param site_url: the site's root URL; the VAPID subject if no contact address is configured.
             :return: {email: [SendResult]}
         """
         started, now = time.perf_counter(), time.time()
         subject = self.contact or site_url
-        entries = self.store.for_users(users)
+        everything = self.store.for_users(users)
+        entries = [entry for entry in everything if channel is None or channel in channels_of(entry)]
         results, by_user = {}, {user: [] for user in users}
         for entry in entries:
             try:
@@ -169,8 +199,9 @@ class Notifier:
             results[entry['endpoint']] = result
             by_user[entry['user']].append(result)
         gone = self.store.record(results, now) if results else []
-        LOGGER.info('Notification %r (topic=%s) to %s: %d devices, %d delivered, %d gone (removed: %s), '
-                    'users without devices: %s, in %.0f ms', data.get('title'), topic, sorted(users), len(entries),
+        LOGGER.info('Notification %r (topic=%s, channel=%s) to %s: %d devices (%d skipped by channel), %d delivered, %d gone (removed: %s), '
+                    'users without devices: %s, in %.0f ms', data.get('title'), topic, channel, sorted(users),
+                    len(entries), len(everything) - len(entries),
                     sum(result.ok for result in results.values()), len(gone),
                     [webpush.describe_endpoint(endpoint) for endpoint in gone],
                     sorted(user for user, user_results in by_user.items() if not user_results),

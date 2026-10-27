@@ -112,10 +112,11 @@ def announce_processed(game, meta, processed):
 MAX_PUSH_TTL = 28 * 86400           # push services keep messages at most about 4 weeks
 
 
-def queue_notification(users, data, topic=None, ttl=None):
-    """ Schedules a push notification to `users` (emails) for after the response. """
+def queue_notification(users, data, topic=None, ttl=None, channel=None):
+    """ Schedules a push notification to `users` (emails) for after the response, to their devices that have
+        `channel` (see `notify.CHANNELS`; None: all devices). """
     if current_app.config['NOTIFIER'] and users:
-        g.setdefault('pending_push', []).append((sorted(users), data, topic, ttl or 7 * 86400))
+        g.setdefault('pending_push', []).append((sorted(users), data, topic, ttl or 7 * 86400, channel))
 
 
 def recipient_lang(email):
@@ -145,7 +146,7 @@ def notify_new_phase(game, meta, processed):
                 else:
                     body = _('Draw between: %(powers)s.', powers=names)
                 queue_notification(users, {'title': _('Diplomacy: the game is over'), 'body': body,
-                                           'url': url, 'tag': 'phase'}, topic='phase')
+                                           'url': url, 'tag': 'phase'}, topic='phase', channel='turns')
         LOGGER.info('Queued game over notification after %s to %s', processed, by_lang)
         return
     by_user = {}
@@ -158,7 +159,7 @@ def notify_new_phase(game, meta, processed):
             if meta['deadline']:
                 body += ' ' + _('Deadline: %(time)s.', time=format_time(meta['deadline']))
             queue_notification([user], {'title': _('Diplomacy: %(phase)s', phase=phase_title(phase)), 'body': body,
-                                        'url': url, 'tag': 'phase'}, topic='phase', ttl=ttl)
+                                        'url': url, 'tag': 'phase'}, topic='phase', ttl=ttl, channel='turns')
     LOGGER.info('Queued new phase notifications for %s (after %s) to %s (languages %s)', phase, processed, by_user,
                 {user: recipient_lang(user) for user in by_user})
 
@@ -182,7 +183,7 @@ def send_due_reminders(game, meta, store, now):
                                         'body': _('Not done yet: %(states)s. Deadline: %(time)s.',
                                                   states='; '.join(states), time=format_time(meta['deadline'])),
                                         'url': url_for('game.index'), 'tag': 'phase'},
-                               topic='phase', ttl=max(60, int(meta['deadline'] - now)))
+                               topic='phase', ttl=max(60, int(meta['deadline'] - now)), channel='turns')
 
 
 @bp.after_app_request
@@ -196,9 +197,9 @@ def deliver_notifications(response):
         def deliver():
             with app.app_context():
                 g.request_id = request_id           # so these log lines can be matched to the request
-                for users, data, topic, ttl in pending:
+                for users, data, topic, ttl, channel in pending:
                     try:
-                        app.config['NOTIFIER'].send(users, data, site_url, topic=topic, ttl=ttl)
+                        app.config['NOTIFIER'].send(users, data, site_url, topic=topic, ttl=ttl, channel=channel)
                     except Exception:   # pylint: disable=broad-except
                         LOGGER.exception('Delivering notification %r to %s failed', data.get('title'), users)
         response.call_on_close(deliver)
@@ -758,9 +759,11 @@ def device_label(agent):
 def notifications():
     """ Enable notifications on this device, send a test, see and remove the user's devices. """
     notifier = current_app.config['NOTIFIER']
-    devices = []
+    devices, channels = [], []
+    if notifier:
+        from webapp.notify import CHANNELS, describe_device   # pylint: disable=import-outside-toplevel (see notifier_or_404)
+        channels = list(zip(CHANNELS, (_('Turns'), _('Messages'))))
     for entry in notifier.store.for_users([g.user.email]) if notifier else []:
-        from webapp.notify import describe_device   # pylint: disable=import-outside-toplevel (see notifier_or_404)
         device = describe_device(entry)
         error = device['last_error']
         devices.append(dict(device, label=device_label(device['agent']),
@@ -769,7 +772,8 @@ def notifications():
                             error='%s (%s)' % (format_time(error['at']), error['status'] or _('unreachable'))
                                   if error else ''))
     return render_template('notifications.html', enabled=bool(notifier),
-                           public_key=notifier.public_key if notifier else '', devices=devices)
+                           public_key=notifier.public_key if notifier else '', devices=devices,
+                           channels=channels)
 
 
 @bp.route('/notifications/subscribe', methods=['POST'])
@@ -811,6 +815,21 @@ def notifications_remove():
         return jsonify(ok=True, removed=removed)
     flash(_('Device removed: it will not get notifications any more.') if removed else _('Device not found.'),
           'ok' if removed else 'error')
+    return redirect(url_for('game.notifications'))
+
+
+@bp.route('/notifications/channels', methods=['POST'])
+@login_required
+def notifications_channels():
+    """ Chooses which kinds of notifications one of the user's devices gets (one checkbox per channel). """
+    notifier = notifier_or_404()
+    from webapp.notify import CHANNELS              # pylint: disable=import-outside-toplevel (see notifier_or_404)
+    device = request.form.get('device', '')
+    channels = [name for name in CHANNELS if request.form.get('channel_' + name) == 'yes']
+    found = notifier.store.set_channels(g.user.email, device, channels)
+    if not found:
+        LOGGER.warning('Channels %s for push device %s refused: not a device of %r', channels, device, g.user.email)
+    flash(_('Device settings saved.') if found else _('Device not found.'), 'ok' if found else 'error')
     return redirect(url_for('game.notifications'))
 
 

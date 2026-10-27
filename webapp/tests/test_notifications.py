@@ -7,6 +7,8 @@ import time
 
 import http_ece
 
+from webapp.notify import device_id
+
 from webapp.tests.test_app import Browser, app_fixture, write_users  # pylint: disable=unused-import
 from webapp.tests.test_webpush import FakePushService, browser_subscription
 
@@ -254,3 +256,114 @@ def test_app_runs_without_cryptography(tmp_path):
     assert result.stdout.strip().endswith('OK'), result.stderr[-3000:]
     log = (tmp_path / 'logs' / 'app.log').read_text()
     assert 'Push notifications DISABLED' in log
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Channels
+# ----------------------------------------------------------------------------------------------------------------
+def set_entry_channels(app, endpoint, channels):
+    """ Rewrites subscriptions.json so that the entry has these channels (None: no field at all). """
+    path = app.config['DATA_DIR'] + '/subscriptions.json'
+    with open(path, encoding='utf-8') as file:
+        data = json.load(file)
+    for entry in data['subscriptions']:
+        if entry['endpoint'] == endpoint:
+            entry.pop('channels', None)
+            if channels is not None:
+                entry['channels'] = channels
+    with open(path, 'w', encoding='utf-8') as file:
+        json.dump(data, file)
+
+
+def device_ids(app, user):
+    return [device['id'] for device in app.config['NOTIFIER'].store.summary()[user + '@example.com']]
+
+
+def test_new_device_has_all_channels_and_old_entries_count_as_all(app):
+    subscription, _, _ = browser_subscription()
+    bruno = Browser(app, 'bruno')
+    subscribe(bruno, subscription)
+    assert app.config['NOTIFIER'].store.all()[0]['channels'] == ['turns', 'messages']
+    set_entry_channels(app, subscription['endpoint'], None)             # an entry from before channels existed
+    summary = app.config['NOTIFIER'].store.summary()['bruno@example.com']
+    assert summary[0]['channels'] == ['turns', 'messages']
+    page = bruno.text('/notifications')
+    assert page.count('checked') == 2
+
+
+def test_only_devices_with_the_channel_get_game_notifications(app):
+    service = FakePushService()
+    app.config['NOTIFIER'].opener = service
+    anna = Browser(app, 'anna')
+    anna.post('/admin/new-game', confirm='yes')
+    keys, subscriptions = {}, {}
+    for label in ('phone', 'laptop', 'old'):
+        subscription, private_key, auth = browser_subscription('https://fcm.googleapis.com/fcm/send/bruno-' + label)
+        subscribe(Browser(app, 'bruno'), subscription)
+        keys[subscription['endpoint']] = (private_key, auth)
+        subscriptions[label] = subscription['endpoint']
+    store = app.config['NOTIFIER'].store
+    bruno = Browser(app, 'bruno')
+    ids = {entry['endpoint']: device_id(entry['endpoint']) for entry in store.all()}
+    bruno.post('/notifications/channels', device=ids[subscriptions['phone']], channel_messages='yes')
+    bruno.post('/notifications/channels', device=ids[subscriptions['laptop']], channel_turns='yes')
+    set_entry_channels(app, subscriptions['old'], None)
+    anna.post('/orders', phase='S1901M', order_PAR='A PAR - BUR', ready='yes')
+    bruno.post('/orders', phase='S1901M', order_MUN='A MUN - BUR', ready='yes')           # new phase
+    got = sorted(endpoint for endpoint, _ in payloads(service, keys))
+    assert got == [subscriptions['laptop'], subscriptions['old']]
+
+    del service.requests[:]
+    set_deadline(app, 3600 + 90)
+    app.config['CRON_TOKEN'] = 'cron-secret'
+    Browser(app).get('/cron/tick?token=cron-secret')
+    assert sorted(endpoint for endpoint, _ in payloads(service, keys)) == [subscriptions['laptop'],
+                                                                           subscriptions['old']]
+
+
+def test_refresh_keeps_channels_but_moving_to_another_user_resets_them(app):
+    subscription, _, _ = browser_subscription()
+    bruno = Browser(app, 'bruno')
+    subscribe(bruno, subscription)
+    [device] = device_ids(app, 'bruno')
+    bruno.post('/notifications/channels', device=device, channel_messages='yes')
+    assert app.config['NOTIFIER'].store.all()[0]['channels'] == ['messages']
+    subscribe(bruno, subscription)                                      # the once-per-session refresh
+    assert app.config['NOTIFIER'].store.all()[0]['channels'] == ['messages']
+    subscribe(Browser(app, 'anna'), subscription)                       # same browser, other login
+    entry = app.config['NOTIFIER'].store.all()[0]
+    assert entry['user'] == 'anna@example.com' and entry['channels'] == ['turns', 'messages']
+
+
+def test_channels_view_changes_only_own_devices(app):
+    subscription, _, _ = browser_subscription()
+    bruno = Browser(app, 'bruno')
+    subscribe(bruno, subscription)
+    [device] = device_ids(app, 'bruno')
+    anna = Browser(app, 'anna')
+    anna.post('/notifications/channels', device=device)
+    assert 'Device not found.' in anna.text('/notifications')
+    assert app.config['NOTIFIER'].store.all()[0]['channels'] == ['turns', 'messages']
+    bruno.post('/notifications/channels', device=device, channel_turns='yes')
+    assert app.config['NOTIFIER'].store.all()[0]['channels'] == ['turns']
+    assert 'Device settings saved.' in bruno.text('/notifications')
+    bruno.post('/notifications/channels', device=device)
+    assert app.config['NOTIFIER'].store.all()[0]['channels'] == []
+    assert app.config['NOTIFIER'].store.summary()['bruno@example.com'][0]['channels'] == []
+    log = open(app.config['LOG_FILE'], encoding='utf-8').read()
+    assert "['turns', 'messages'] -> ['turns']" in log and subscription['endpoint'] not in log
+    # The request needs the CSRF token.
+    response = bruno.client.post('/notifications/channels', data={'device': device, 'channel_turns': 'yes'})
+    assert response.status_code == 400 and app.config['NOTIFIER'].store.all()[0]['channels'] == []
+
+
+def test_test_notification_reaches_a_device_without_channels(app):
+    service = FakePushService()
+    app.config['NOTIFIER'].opener = service
+    subscription, _, _ = browser_subscription()
+    bruno = Browser(app, 'bruno')
+    subscribe(bruno, subscription)
+    [device] = device_ids(app, 'bruno')
+    bruno.post('/notifications/channels', device=device)
+    bruno.post('/notifications/test')
+    assert len(service.requests) == 1 and 'Test notification sent to 1 device' in bruno.text('/notifications')
