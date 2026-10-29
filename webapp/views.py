@@ -93,7 +93,8 @@ def open_game():
         game, meta = store.load()
         if game:
             g.map_name = game.map_name
-            announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, time.time()))
+            announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, time.time(),
+                                                               current_app.config['STATS_STORE']))
             send_due_reminders(game, meta, store, time.time())
             refresh_unread(game, meta)
         yield game, meta, store
@@ -559,7 +560,8 @@ def orders():
         if errors:
             return fail(errors)
         if autosave:
-            processed = gameplay.process_if_due(game, meta, g.users, store, now)   # only a passed deadline can
+            processed = gameplay.process_if_due(game, meta, g.users, store, now,
+                                                                       current_app.config['STATS_STORE'])   # only a passed deadline can
             if processed:
                 announce_processed(game, meta, processed)
                 return jsonify(ok=True, reload=True)
@@ -573,7 +575,8 @@ def orders():
         flash(_('Orders saved for %(phase)s and marked ready.', phase=phase) if ready else
               _('Orders saved for %(phase)s (not marked ready: the phase waits for you until the deadline).',
                 phase=phase), 'ok')
-        announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, now))
+        announce_processed(game, meta, gameplay.process_if_due(game, meta, g.users, store, now,
+                                                                       current_app.config['STATS_STORE']))
     return redirect(url_for('game.index'))
 
 
@@ -1031,6 +1034,13 @@ def admin_new_game():
     now = time.time()
     store = current_app.config['GAME_STORE']
     with store.locked():
+        try:
+            old_game, old_meta = store.load()
+            if old_game and not old_game.is_game_done:
+                gameplay.record_game_end(old_game, old_meta, g.users, current_app.config['STATS_STORE'], now,
+                                         'abandoned')
+        except Exception:   # pylint: disable=broad-except
+            LOGGER.exception('Cannot load the current game to record it as abandoned (new game goes on)')
         archived = store.archive()
         game, meta = gameplay.new_game(g.user.email, now, players)
         store.save(game, meta)
@@ -1206,8 +1216,10 @@ def admin_process():
             flash(_('There is no game in progress.'), 'error')
         else:
             phase = game.get_current_phase()
-            gameplay.process_phase(game, meta, store, now, 'forced by admin %s' % g.user.email)
-            announce_processed(game, meta, [phase] + gameplay.process_if_due(game, meta, g.users, store, now))
+            gameplay.process_phase(game, meta, store, now, 'forced by admin %s' % g.user.email, g.users,
+                                   current_app.config['STATS_STORE'])
+            announce_processed(game, meta, [phase] + gameplay.process_if_due(game, meta, g.users, store, now,
+                                                                       current_app.config['STATS_STORE']))
     return redirect(url_for('game.admin'))
 
 
@@ -1274,6 +1286,7 @@ def admin_draw():
             store.backup('before_draw_%s' % game.get_current_phase())
             game.draw()
             meta['deadline'] = None
+            gameplay.record_game_end(game, meta, g.users, current_app.config['STATS_STORE'], time.time(), 'draw')
             store.save(game, meta)
             LOGGER.info('Admin %r ended the game as a draw: outcome=%s', g.user.email, game.outcome)
             notify_new_phase(game, meta, ['draw by admin'])

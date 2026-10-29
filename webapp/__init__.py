@@ -35,6 +35,7 @@ from flask import Flask, abort, g, jsonify, request
 
 from webapp import i18n
 from webapp.diagnostics import REPO_DIR, environment_info
+from webapp.stats import StatsStore
 from webapp.store import GameStore
 from webapp.users import UserStore, normalize_email, users_summary
 
@@ -108,6 +109,7 @@ def game_diagnostics(app):
         result['game'] = gameplay.game_summary(game, meta, users) if game else None
     except Exception:   # pylint: disable=broad-except
         result['error'] = traceback.format_exc()
+    result['stats'] = app.config['STATS_STORE'].summary()
     try:
         notifier = app.config['NOTIFIER']
         result['push'] = {'enabled': bool(notifier), 'contact': app.config['PUSH_CONTACT'],
@@ -164,6 +166,7 @@ def create_app():
     app.secret_key = load_secret_key(os.path.join(data_dir, 'secret_key'))
     app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(days=90), SESSION_COOKIE_SAMESITE='Lax',
                       SESSION_COOKIE_HTTPONLY=True)
+    app.config['STATS_STORE'] = StatsStore(data_dir)
     app.config['USER_STORE'] = UserStore(config['USERS_FILE'])
     try:
         from webapp.notify import Notifier  # pylint: disable=import-outside-toplevel

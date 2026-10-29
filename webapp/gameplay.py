@@ -10,7 +10,11 @@
     hold, never support and are disbanded if they must retreat; see `VARIANTS`), ``win`` (supply centers needed
     to win, if not the map's default) and ``allies`` ({power: power whose player also controls it}: in the
     2 player game Italy joins the winner of a coin flip in 1902), ``phase_started`` (epoch seconds) and
-    ``reminded`` ({power: hours}: the last deadline reminder sent to that power in this phase, see `due_reminders`).
+    ``reminded`` ({power: hours}: the last deadline reminder sent to that power in this phase, see `due_reminders`),
+    ``ready_at`` ({power: epoch seconds}: when the power last pressed "I'm done" in this phase; meaningful only
+    while ``ready`` is true; absent in games created before statistics) and ``scored`` (True for a 7 player game on
+    the standard map, set at creation: statistics are recorded only for such games, see `stats.py`; 'recorded' once
+    the game record was written; absent in older games, which are never scored).
 """
 import functools
 import logging
@@ -107,6 +111,7 @@ def new_game(created_by, now, players=MAX_PLAYERS):
     game = Game(game_id='game_%s' % time.strftime('%Y%m%d_%H%M%S', time.gmtime(now)))
     meta = {'created_by': created_by, 'created_at': now, 'phase_hours': dict(DEFAULT_PHASE_HOURS),
             'last_processed': None, 'players': players, 'neutral': neutral_powers(players), 'allies': {}}
+    meta['scored'] = players == 7 and game.map_name == 'standard'
     if players == 2:
         meta['win'] = TWO_PLAYER_WIN
     start_phase_clock(game, meta, now)
@@ -123,6 +128,7 @@ def start_phase_clock(game, meta, now):
     meta['phase'] = phase
     meta['phase_started'] = now
     meta['ready'] = {}
+    meta['ready_at'] = {}
     meta['submitted'] = {}
     meta['reminded'] = {}
     meta['deadline'] = now + hours * 3600 if hours and not game.is_game_done else None
@@ -191,13 +197,57 @@ def due_reason(game, meta, users, now):
     return None
 
 
-def process_phase(game, meta, store, now, reason):
+def record_turns(game, meta, users, stats, reason):
+    """ Statistics: one record per power that has a player and something to order, just before processing.
+        Never raises. """
+    if not meta.get('scored') or stats is None:
+        return
+    try:
+        phase = game.get_current_phase()
+        players = players_by_power(game, meta, users)
+        ready, ready_at = meta.get('ready', {}), meta.get('ready_at', {})
+        records = [{'game_id': game.game_id, 'phase': phase, 'power': power, 'user': players[power],
+                    'started': meta.get('phase_started'),
+                    'ready_at': ready_at.get(power) if ready.get(power) else None,
+                    'deadline': meta.get('deadline'), 'reason': reason}
+                   for power in active_powers(game, meta, users)]
+        stats.add_turns(records)
+        for record in records:
+            LOGGER.info('Stats turn recorded: %s', record)
+    except Exception:   # pylint: disable=broad-except
+        LOGGER.exception('Cannot record turn statistics of game %s phase %s (processing goes on)',
+                         game.game_id, game.get_current_phase())
+
+
+def record_game_end(game, meta, users, stats, now, end):
+    """ Statistics: the game record (once per game; the caller saves `meta`). Never raises.
+
+        :param end: 'solo' (won in processing), 'draw' (admin) or 'abandoned' (replaced by a new game).
+    """
+    if meta.get('scored') is not True or stats is None:     # not scored, or already 'recorded'
+        return
+    try:
+        players = players_by_power(game, meta, users)
+        record = {'game_id': game.game_id, 'created_at': meta.get('created_at'), 'ended_at': now, 'end': end,
+                  'outcome': list(game.outcome) if game.outcome else None, 'phase': game.get_current_phase(),
+                  'powers': {power: {'centers': len(game.get_centers(power)), 'user': players.get(power)}
+                             for power in ALL_POWERS}}
+        stats.add_game(record)
+        meta['scored'] = 'recorded'
+        LOGGER.info('Stats game recorded: %s', record)
+    except Exception:   # pylint: disable=broad-except
+        LOGGER.exception('Cannot record the %s of game %s in the statistics (going on)', end, game.game_id)
+
+
+def process_phase(game, meta, store, now, reason, users=None, stats=None):
     """ Saves, backs up, processes the current phase and starts the clock of the next one. """
     phase = game.get_current_phase()
     store.save(game, meta)
     store.backup('before_%s' % phase)
     LOGGER.info('Processing %s (%s). ready=%s submitted=%s orders=%s', phase, reason, meta['ready'],
                 sorted(meta['submitted']), game.get_orders())
+    if users is not None:
+        record_turns(game, meta, users, stats, reason)
     neutral_units = {power: list(game.get_power(power).units) for power in meta.get('neutral', [])
                      if game.has_power(power)} if phase[-1] == 'A' else {}
     if meta.get('win'):
@@ -215,6 +265,8 @@ def process_phase(game, meta, store, now, reason):
     LOGGER.info('After %s: centers=%s units=%s', phase, game.get_centers(), game.get_units())
     if game.is_game_done:
         LOGGER.info('Game is over: outcome=%s', game.outcome)
+        if users is not None:
+            record_game_end(game, meta, users, stats, now, 'solo')
     meta['last_processed'] = {'phase': phase, 'at': now, 'reason': reason}
     italy_joins(game, meta, now)
     start_phase_clock(game, meta, now)
@@ -222,7 +274,7 @@ def process_phase(game, meta, store, now, reason):
     store.save(game, meta)
 
 
-def process_if_due(game, meta, users, store, now):
+def process_if_due(game, meta, users, store, now, stats=None):
     """ Processes the current phase (and following ones) while they are due.
 
         :return: list of processed phase names
@@ -233,7 +285,7 @@ def process_if_due(game, meta, users, store, now):
         if not reason:
             break
         processed.append(game.get_current_phase())
-        process_phase(game, meta, store, now, reason)
+        process_phase(game, meta, store, now, reason, users, stats)
     else:
         LOGGER.warning('Stopped after processing %d phases in one request: %s', len(processed), processed)
     return processed
@@ -417,6 +469,8 @@ def submit_orders(game, meta, power_name, chosen, ready, now):
     meta['submitted'][power_name] = now
     ready = bool(ready)
     meta['ready'][power_name] = ready
+    if ready:
+        meta.setdefault('ready_at', {})[power_name] = now
     LOGGER.info('Orders set by %s in %s: %s (was %s) ready=%s', power_name, phase,
                 game.get_orders(power_name), previous, ready)
     return []
