@@ -7,8 +7,8 @@
 
     - a move, a support of a move and a convoyed move end at the centre of the target province, taken from the
       position of its name in the SVG's ``BriefLabelLayer`` (text-anchor middle, placed by hand near the middle of
-      the province); the arrow stops `Style.stop` short of it so the head does not sit on the name. A province
-      without a name keeps the engine's unit position. Support to hold still points at the unit it supports.
+      the province); the arrow stops `Style.stop` short of it so the head does not sit on the name (rotated names
+      are read through their ``translate rotate`` transform). A province without a usable name keeps the engine's unit position. Support to hold still points at the unit it supports.
     - lines have a thin light outline instead of the shadow, supports are dotted and convoys long dashed, and the
       arrow heads are bigger and coloured like the line (markers added to the output's ``<defs>``).
 
@@ -18,6 +18,7 @@
 import copy
 import functools
 import logging
+import math
 import re
 from collections import namedtuple
 from xml.dom import minidom
@@ -34,6 +35,8 @@ Style = namedtuple('Style', 'classic anchor stop start min_visible outline outli
 STYLE = Style(classic=False, anchor='label', stop=6, start=22, min_visible=30, outline='#ffffff', outline_extra=5, width=6, head=26,
               dash_support='2,9', dash_convoy='20,9', halo=True)
 LABEL_RAISE = {'labeltext18': 5, 'labeltext24': 7}      # the label's baseline is below its visual middle
+NUMBER = r'(-?\d*\.?\d+(?:[eE][-+]?\d+)?)'
+LABEL_TRANSFORM = re.compile(r'^\s*translate\(\s*%s[\s,]+%s\s*\)\s*(?:rotate\(\s*%s\s*\))?\s*$' % (NUMBER, NUMBER, NUMBER))
 HALO = 'stroke="#ffffff" stroke-width="3.5" stroke-opacity="0.85" stroke-linejoin="round" paint-order="stroke"'
 
 
@@ -55,9 +58,22 @@ class WebRenderer(Renderer):
             if layer.getAttribute('id') != 'BriefLabelLayer':
                 continue
             for text in layer.getElementsByTagName('text'):
+                name = text.firstChild.data.strip().upper()
                 kind = 'labeltext18' if 'labeltext18' in text.getAttribute('class') else 'labeltext24'
-                centers[text.firstChild.data.strip().upper()] = (float(text.getAttribute('x')),
-                                                                float(text.getAttribute('y')) - LABEL_RAISE[kind])
+                x, y = float(text.getAttribute('x')), float(text.getAttribute('y')) - LABEL_RAISE[kind]
+                transform = text.getAttribute('transform')
+                if not transform:
+                    centers[name] = (x, y)
+                    continue
+                # A rotated name (e.g. SKA) sits at x=y=0 inside `translate(tx ty) rotate(a)`: the lift turns with it.
+                match = LABEL_TRANSFORM.match(transform)
+                if not match:
+                    LOGGER.warning('Label %s has an unsupported transform %r: arrows into it use the unit position',
+                                   name, transform)
+                    continue
+                tx, ty, angle = float(match.group(1)), float(match.group(2)), math.radians(float(match.group(3) or 0))
+                centers[name] = (round(tx + x * math.cos(angle) - y * math.sin(angle), 2),
+                                 round(ty + x * math.sin(angle) + y * math.cos(angle), 2))
         return centers
 
     def _target_center(self, loc):

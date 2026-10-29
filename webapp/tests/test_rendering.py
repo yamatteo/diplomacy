@@ -1,6 +1,8 @@
 """ The web app's map renderer: arrows aim at the province names, nothing else of the map changes. """
+import math
 import re
 import time
+from xml.dom import minidom
 
 from diplomacy import Game
 from webapp import rendering
@@ -22,6 +24,38 @@ def test_label_centers_cover_the_map():
     x, y = renderer.label_centers['BUR']
     ux, uy = (float(v) for v in renderer.metadata['coord']['BUR']['unit'])
     assert abs(x - ux) + abs(y - uy) < 80           # the name is near the province's unit position
+
+
+MOUSE_ID = {'LYO': 'GOL', 'MAO': 'MID', 'NAO': 'NAT', 'NWG': 'NRG', 'TYS': 'TYN'}     # seas the MouseLayer names differently
+
+
+def test_label_centers_lie_inside_their_provinces():
+    renderer = rendering.renderer_for(Game())
+    layer = next(g for g in minidom.parseString(renderer.xml_map).getElementsByTagName('g')
+                 if g.getAttribute('id') == 'MouseLayer')
+    dx, dy = (float(v) for v in re.findall(r'-?[\d.]+', layer.getAttribute('transform')))
+    boxes = {}              # province -> its paths' control points, in map coordinates (a path or a group of paths)
+    for node in layer.childNodes:
+        if node.nodeType != node.ELEMENT_NODE or not node.getAttribute('id'):
+            continue
+        paths = [node] if node.tagName == 'path' else node.getElementsByTagName('path')
+        numbers = [float(n) for path in paths for n in re.findall(r'-?\d+\.?\d*', path.getAttribute('d'))]
+        boxes[node.getAttribute('id').upper()] = ([n + dx for n in numbers[0::2]], [n + dy for n in numbers[1::2]])
+    pad = 5
+    for loc, (x, y) in renderer.label_centers.items():
+        assert MOUSE_ID.get(loc, loc) in boxes, 'no MouseLayer shape for %s' % loc
+        xs, ys = boxes[MOUSE_ID.get(loc, loc)]
+        assert min(xs) - pad <= x <= max(xs) + pad, (loc, x, (min(xs), max(xs)))
+        assert min(ys) - pad <= y <= max(ys) + pad, (loc, y, (min(ys), max(ys)))
+
+
+def test_rotated_labels_are_centred_through_their_transform():
+    centers = rendering.renderer_for(Game()).label_centers
+    expected = {'SKA': (754.5 + 7 * math.sin(math.radians(75)), 571.2 - 7 * math.cos(math.radians(75))),
+                'POR': (175.1 + 7 * math.sin(math.radians(-60)), 1102.1 - 7 * math.cos(math.radians(-60))),
+                'ROM': (744 + 5 * math.sin(math.radians(50)), 1093 - 5 * math.cos(math.radians(50)))}
+    for loc, (x, y) in expected.items():
+        assert abs(centers[loc][0] - x) < 1 and abs(centers[loc][1] - y) < 1, (loc, centers[loc], (x, y))
 
 
 def test_move_arrow_points_into_the_target_province():
