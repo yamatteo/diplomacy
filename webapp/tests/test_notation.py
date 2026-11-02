@@ -164,8 +164,14 @@ def test_off_the_page_shows_raw_orders(app):
     anna = start_game(app)
     page = anna.text('/')
     assert 'data-short' not in page and 'data-unit' not in page
+    assert '<div class="orders-grid">' in page and 'minmax(0, 1fr)' not in page
     assert '<option value="A PAR - BUR" >A PAR - BUR</option>' in page
     assert '<strong>A PAR</strong>' in page
+
+
+def test_navigation_wraps_on_narrow_screens(app):
+    page = Browser(app, 'anna').text('/')
+    assert re.search(r'header nav \{[^}]*flex-wrap: wrap', page)
 
 
 def test_on_the_page_describes_orders_but_values_stay_traditional(app):
@@ -174,6 +180,7 @@ def test_on_the_page_describes_orders_but_values_stay_traditional(app):
     page = anna.text('/')
     assert 'value="A PAR - BUR"' in page and 'Army Paris (PAR) moves to Burgundy (BUR)</option>' in page
     assert 'data-short="moves to Burgundy (BUR)"' in page and 'data-unit="Army Paris (PAR)"' in page
+    assert '<div class="orders-grid" style="grid-template-columns: minmax(0, 1fr)">' in page      # one column
     assert '<strong>Army Paris (PAR)</strong>' in page
     assert '<strong>Fleet Brest (BRE)</strong>' in page
     assert 'moves to Mid-Atlantic Ocean (MAO)</option>' in page

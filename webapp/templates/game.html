@@ -63,7 +63,7 @@
     {% for entry in choices %}
       {% if choices|length > 1 %}<h3>{{ entry.power|power_name }}</h3>{% endif %}
       {% if entry.choices.note %}<p class="muted">{{ entry.choices.note }}</p>{% endif %}
-      <div class="orders-grid">
+      <div class="orders-grid"{% if g.user.explicit_orders %} style="grid-template-columns: minmax(0, 1fr)"{% endif %}>
         {% for item in entry.choices['items'] %}
           <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label|unit_text(item.loc)|seas }}</strong></label>
           <select id="order_{{ item.loc }}" name="order_{{ item.loc }}" data-power="{{ entry.power|lower }}"{% if g.user.explicit_orders %} data-unit="{{ item.label|unit_text(item.loc) }}"{% endif %}>
