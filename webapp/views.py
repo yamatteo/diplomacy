@@ -21,7 +21,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, r
                    send_from_directory, session, url_for)
 from markupsafe import Markup
 
-from webapp import gameplay, i18n, messages, sandbox, tutorial
+from webapp import gameplay, i18n, messages, notation, sandbox, tutorial
 from webapp.i18n import gettext as _, ngettext
 from webapp.users import (LINK_DAYS, check_login, link_state, login_failure_reason, normalize_email,
                           password_problem, verify_password)
@@ -240,10 +240,56 @@ def format_delta(seconds):
 
 @bp.app_template_filter('seas')
 def mark_seas(text):
-    """ Order text -> HTML with sea provinces in italics ('F <i>NTH</i> - NWY'), as on the map. """
+    """ Order text -> HTML with sea provinces in italics ('F <i>NTH</i> - NWY'), as on the map. Also in brackets, as
+        in the readable descriptions ('North Sea (<i>NTH</i>)'). """
     seas = gameplay.sea_locations(g.get('map_name') or 'standard')
-    return Markup(' ').join(Markup('<span class="sea">%s</span>') % word if word in seas else word
-                            for word in str(text).split(' '))
+
+    def mark(word):
+        if word in seas:
+            return Markup('<span class="sea">%s</span>') % word
+        if len(word) > 2 and word[0] == '(' and word[-1] == ')' and word[1:-1] in seas:
+            return Markup('(<span class="sea">%s</span>)') % word[1:-1]
+        return word
+    return Markup(' ').join(mark(word) for word in str(text).split(' '))
+
+
+def explicit_orders():
+    """ True if the current user reads orders as descriptions (profile switch), False for the traditional notation
+        and for visitors who are not logged in. """
+    return bool(getattr(g.get('user'), 'explicit_orders', False))
+
+
+@bp.app_template_filter('order_text')
+def order_text(order):
+    """ An order ('A PAR - BUR') as the user wants to read it: unchanged, or described in words. """
+    return notation.describe_order(order, g.get('map_name') or 'standard') if explicit_orders() else order
+
+
+@bp.app_template_filter('order_short')
+def order_short(order):
+    """ The order without its unit, for the order dialog ('moves to Burgundy (BUR)'); a description only. """
+    return notation.describe_short(order, g.get('map_name') or 'standard')
+
+
+@bp.app_template_filter('province_name')
+def province_name_label(abbr, name):
+    """ A province's abbreviation and English name (`tutorial.provinces`) -> its name in the user's language. """
+    return i18n.province_name(abbr, name)
+
+
+UNIT_RE = re.compile(r'^\*?[AF] [A-Z]{3}(/[A-Z]{2})?$')
+
+
+@bp.app_template_filter('unit_text')
+def unit_text(label, loc=''):
+    """ The label of an item of `gameplay.order_choices` ('A PAR', or 'Build at BER' for a build) as the user wants
+        to read it. """
+    if not explicit_orders():
+        return label
+    map_name = g.get('map_name') or 'standard'
+    if loc and not UNIT_RE.match(label):
+        return _('Build at %(loc)s', loc=notation.describe_loc(loc, map_name))
+    return notation.describe_unit(label, map_name)
 
 
 def deadline_text(meta, now):
@@ -426,6 +472,19 @@ def profile_sandbox():
     LOGGER.info('User %r turned the order simulator %s (was %s)', g.user.email, 'on' if enabled else 'off',
                 'on' if g.user.sandbox else 'off')
     flash(_('Order simulator turned on.') if enabled else _('Order simulator turned off.'), 'ok')
+    return redirect(url_for('game.profile'))
+
+
+@bp.route('/profile/orders-style', methods=['POST'])
+@login_required
+def profile_orders_style():
+    """ Turns the user's readable order descriptions on or off (checkbox `explicit_orders=yes`; absent means off). """
+    enabled = request.form.get('explicit_orders') == 'yes'
+    current_app.config['USER_STORE'].set_explicit_orders(g.user.email, enabled)
+    LOGGER.info('User %r turned the explicit order descriptions %s (was %s)', g.user.email,
+                'on' if enabled else 'off', 'on' if g.user.explicit_orders else 'off')
+    flash(_('Orders will be described in words.') if enabled else _('Orders will be shown in the traditional notation.'),
+          'ok')
     return redirect(url_for('game.profile'))
 
 
@@ -616,6 +675,11 @@ def simulate_orders():
             LOGGER.info('Simulation of %r in %s refused: guesses=%s errors=%s', g.user.email, phase, guesses,
                         [i18n.english(message) for message in exc.messages])
             return jsonify(ok=False, errors=exc.messages), 400
+        explicit = explicit_orders()
+        for item in result['outcomes']:
+            raw = item['order'] or item['unit']
+            item['text'] = (notation.describe_order(raw, game.map_name) if item['order']
+                            else notation.describe_unit(raw, game.map_name)) if explicit else raw
         return jsonify(ok=True, svg=result['svg'], outcomes=result['outcomes'])
     finally:
         busy.release()

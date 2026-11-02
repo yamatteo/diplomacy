@@ -227,7 +227,7 @@
   <h3>{{ kind_names[kind] }}</h3>
   <div class="provinces">
     {% for abbr, name, is_center, home in rows %}
-      <div><code>{{ abbr }}</code> {{ name }}{% if home %} ★ <span class="muted">{{ home|power_name }}</span>{% elif is_center %} ●{% endif %}</div>
+      <div><code>{{ abbr }}</code> {{ abbr|province_name(name) }}{% if home %} ★ <span class="muted">{{ home|power_name }}</span>{% elif is_center %} ●{% endif %}</div>
     {% endfor %}
   </div>
 {% endfor %}

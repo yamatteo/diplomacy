@@ -297,3 +297,11 @@ def test_italian_rulebook_is_for_logged_in_players_only(app):
     rulebook = Browser(app, 'carla').get('/regole.pdf')
     assert rulebook.status_code == 200 and rulebook.mimetype == 'application/pdf' and rulebook.data[:4] == b'%PDF'
     assert 'private' in rulebook.headers['Cache-Control']
+
+
+def test_every_province_of_the_standard_map_has_an_italian_name():
+    """ Orders in words (webapp/notation.py) name provinces in the user's language. """
+    from diplomacy import Game
+    provinces = {abbr for abbr in Game().map.loc_name.values() if '/' not in abbr}
+    assert provinces == set(i18n_it.PROVINCES)
+    assert all(i18n_it.PROVINCES[abbr].strip() for abbr in provinces)

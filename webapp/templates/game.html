@@ -65,13 +65,13 @@
       {% if entry.choices.note %}<p class="muted">{{ entry.choices.note }}</p>{% endif %}
       <div class="orders-grid">
         {% for item in entry.choices['items'] %}
-          <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label|seas }}</strong></label>
-          <select id="order_{{ item.loc }}" name="order_{{ item.loc }}" data-power="{{ entry.power|lower }}">
+          <label for="order_{{ item.loc }}" style="margin: 0"><strong>{{ item.label|unit_text(item.loc)|seas }}</strong></label>
+          <select id="order_{{ item.loc }}" name="order_{{ item.loc }}" data-power="{{ entry.power|lower }}"{% if g.user.explicit_orders %} data-unit="{{ item.label|unit_text(item.loc) }}"{% endif %}>
             <option value="" data-group="{{ entry.choices.default }}">— {{ entry.choices.default|order_group }} —</option>
             {% for group, group_orders in item.groups %}
               <optgroup label="{{ group|order_group }}" data-group="{{ group }}">
                 {% for order in group_orders %}
-                  <option value="{{ order }}" {% if order == item.current %}selected{% endif %}>{{ order }}</option>
+                  <option value="{{ order }}" {% if order == item.current %}selected{% endif %}{% if g.user.explicit_orders %} data-short="{{ order|order_short }}"{% endif %}>{{ order|order_text }}</option>
                 {% endfor %}
               </optgroup>
             {% endfor %}
@@ -99,11 +99,11 @@
   <div id="guess-selects" hidden>
     {% for entry in guess_choices %}
       {% for item in entry.choices['items'] %}
-        <select id="guess_{{ item.loc }}" data-power="{{ entry.power|lower }}" data-kind="guess">
+        <select id="guess_{{ item.loc }}" data-power="{{ entry.power|lower }}" data-kind="guess"{% if g.user.explicit_orders %} data-unit="{{ item.label|unit_text(item.loc) }}"{% endif %}>
           <option value="" data-group="Guess">— {{ _('No guess: it holds') }} —</option>
           {% for group, group_orders in item.groups %}
             <optgroup label="{{ group|order_group }}" data-group="{{ group }}">
-              {% for order in group_orders %}<option value="{{ order }}">{{ order }}</option>{% endfor %}
+              {% for order in group_orders %}<option value="{{ order }}"{% if g.user.explicit_orders %} data-short="{{ order|order_short }}"{% endif %}>{{ order|order_text }}</option>{% endfor %}
             </optgroup>
           {% endfor %}
         </select>
@@ -144,13 +144,22 @@
   document.documentElement.classList.add('js');   // shows the .js-only parts, hides .nojs-only
   var tabsBox = document.getElementById('od-tabs'), listBox = document.getElementById('od-list');
   var select = null;
+  var shortOf = {};   // order -> its short text in the dialog (readable orders); else the unit is stripped
 
   // Order text with sea provinces in italics, as on the map. Built with text nodes: no HTML injection.
   function orderNode(text) {
     var span = document.createElement('span');
     text.split(' ').forEach(function (word, i) {
       if (i) span.appendChild(document.createTextNode(' '));
-      if (SEAS.has(word)) {
+      var bracketed = word.length > 2 && word[0] === '(' && word[word.length - 1] === ')' && SEAS.has(word.slice(1, -1));
+      if (bracketed) {   // "North Sea (NTH)"
+        var inner = document.createElement('span');
+        inner.className = 'sea';
+        inner.textContent = word.slice(1, -1);
+        span.appendChild(document.createTextNode('('));
+        span.appendChild(inner);
+        span.appendChild(document.createTextNode(')'));
+      } else if (SEAS.has(word)) {
         var sea = document.createElement('span');
         sea.className = 'sea';
         sea.textContent = word;
@@ -184,7 +193,10 @@
   function groupsOf(sel) {
     var tabs = [], direct = [];
     Array.prototype.forEach.call(sel.querySelectorAll('optgroup'), function (group) {
-      var orders = Array.prototype.map.call(group.querySelectorAll('option'), function (o) { return o.value; });
+      var orders = Array.prototype.map.call(group.querySelectorAll('option'), function (o) {
+        if (o.dataset.short) shortOf[o.value] = o.dataset.short;
+        return o.value;
+      });
       var name = group.dataset.group, label = group.label;
       if ((name === 'Hold' || name === 'Disband') && orders.length === 1) {
         direct.push({name: name, label: label, order: orders[0]});
@@ -214,7 +226,7 @@
       }
       section.orders.forEach(function (order) {
         // The unit is in the title: list "- BUR", "S A MAR - BUR" instead of repeating "A PAR".
-        var shown = order.indexOf(unit + ' ') === 0 ? order.slice(unit.length + 1) : order;
+        var shown = shortOf[order] || (order.indexOf(unit + ' ') === 0 ? order.slice(unit.length + 1) : order);
         var b = button('od-order', orderNode(shown), function () { choose(order); });
         if (order === select.value) b.classList.add('current');
         listBox.appendChild(b);
@@ -226,14 +238,16 @@
     select = sel;
     var title = document.getElementById('od-title');
     title.textContent = '';
-    title.appendChild(orderNode(unit));
+    title.appendChild(orderNode(sel.dataset.unit || unit));
     var isGuess = sel.dataset.kind === 'guess';   // a simulator guess: nothing is saved
     var current = document.getElementById('od-current');
     current.textContent = (isGuess ? T.currentGuess : T.current) + ' ';
-    current.appendChild(sel.value ? orderNode(sel.value) : document.createTextNode(sel.options[0].text));
+    current.appendChild(sel.value ? orderNode(sel.options[sel.selectedIndex].text)
+                                  : document.createTextNode(sel.options[0].text));
     var foot = document.getElementById('od-foot');
     if (!foot.dataset.text) foot.dataset.text = foot.textContent;
     foot.textContent = isGuess ? T.guessFoot : foot.dataset.text;
+    shortOf = {};
     var groups = groupsOf(sel);
     tabsBox.textContent = '';
     listBox.textContent = '';
@@ -438,7 +452,7 @@
     outcomes.forEach(function (item) {
       if (!item.order && !item.dislodged) return;
       var li = document.createElement('li');
-      li.appendChild(orderNode(item.order || item.unit));
+      li.appendChild(orderNode(item.text || item.order || item.unit));
       li.appendChild(document.createTextNode(' — ' + T.outcomes[item.outcome] + (item.dislodged ? ', ' + T.dislodged : '') +
                                              (item.guess ? ' (' + T.guess + ')' : '')));
       simList.appendChild(li);

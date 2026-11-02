@@ -12,7 +12,8 @@
       `using(lang)` switches it temporarily, e.g. to build a push notification in the recipient's language.
     - Logs stay in English: the texts returned by `gettext` and `ngettext` remember their English version, which
       `english()` returns (also for an exception raised with such a text).
-    - Order notation and province abbreviations (``A PAR - BUR``) are the same in every language.
+    - Order notation and province abbreviations (``A PAR - BUR``) are the same in every language; users who prefer
+      readable orders get descriptions (webapp/notation.py) with translated province names (`province_name`).
 """
 import contextlib
 import logging
@@ -28,6 +29,7 @@ LANGUAGE_NAMES = {'en': 'English', 'it': 'Italiano'}      # each in its own lang
 DEFAULT_LANGUAGE = 'en'
 CATALOGS = {'it': i18n_it.MESSAGES}
 POWER_NAMES = {'it': i18n_it.POWERS}
+PROVINCE_NAMES = {'it': i18n_it.PROVINCES}
 DAY_NAMES = {'en': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], 'it': i18n_it.DAYS}
 MONTH_NAMES = {'en': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
                'it': i18n_it.MONTHS}
@@ -102,6 +104,13 @@ def power_name(power, lang=None):
     """ 'FRANCE' -> 'France' / 'Francia'. """
     lang = lang or current_lang()
     return POWER_NAMES.get(lang, {}).get(power.upper(), power.title())
+
+
+def province_name(abbr, name, lang=None):
+    """ 'NWY', 'Norway' -> 'Norway' / 'Norvegia': the translation of a province of the standard map, else `name`
+        (the English name, also for provinces of other maps). """
+    lang = lang or current_lang()
+    return PROVINCE_NAMES.get(lang, {}).get(abbr.upper(), name)
 
 
 def day_name(weekday):

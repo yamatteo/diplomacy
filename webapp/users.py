@@ -1,7 +1,7 @@
 """ Players' accounts, kept by the app in ``users.json`` in the data dir (managed from the admin page, not by hand).
 
     One account per email address: ``{"users": [{"email", "name", "powers", "admin", "password",
-    "session_version", "link", "created_at", "lang", "sandbox"}]}``.
+    "session_version", "link", "created_at", "lang", "sandbox", "explicit_orders"}]}``.
 
     - ``email`` is the account's id: stored lowercase, unique, never changed. Sessions, push subscriptions and
       logs refer to users by it.
@@ -12,6 +12,8 @@
       default, see webapp/i18n.py). It is also the language of their push notifications.
     - ``sandbox`` (bool, missing: false) turns on the order simulator for the user (see webapp/sandbox.py); they
       switch it on and off on their profile page.
+    - ``explicit_orders`` (bool, missing: false) shows orders as readable descriptions ("Army Paris (PAR) moves to
+      Burgundy (BUR)") instead of the traditional notation (see webapp/notation.py); set on their profile page.
     - ``session_version`` goes up on every password change: sessions made before it are logged out.
     - ``link`` is the pending set-password link, ``{"hash": sha256(token), "expires"}``, or null. The admin
       issues it (for new users and forgotten passwords) and sends it to the user; it works once, for
@@ -38,8 +40,8 @@ from webapp.i18n import LANGUAGES, gettext as _, power_name
 
 LOGGER = logging.getLogger(__name__)
 
-User = namedtuple('User', 'email name powers is_admin password session_version link lang sandbox',
-                  defaults=(None, False))
+User = namedtuple('User', 'email name powers is_admin password session_version link lang sandbox explicit_orders',
+                  defaults=(None, False, False))
 
 PBKDF2_ITERATIONS = 600_000         # about 0.2 s per login; the count is stored in each hash, so it can change
 LINK_DAYS = 7
@@ -127,7 +129,7 @@ def _to_user(record):
                 session_version=int(record.get('session_version') or 0),
                 link=dict(link) if link else None,
                 lang=record.get('lang') if record.get('lang') in LANGUAGES else None,
-                sandbox=bool(record.get('sandbox')))
+                sandbox=bool(record.get('sandbox')), explicit_orders=bool(record.get('explicit_orders')))
 
 
 def link_state(user, now):
@@ -301,6 +303,13 @@ class UserStore:
         with self._editing() as records:
             record = self._find(records, email)
             record['sandbox'] = bool(enabled)
+        return _to_user(record)
+
+    def set_explicit_orders(self, email, enabled):
+        """ Turns the user's readable order descriptions on or off. :return: the updated User. """
+        with self._editing() as records:
+            record = self._find(records, email)
+            record['explicit_orders'] = bool(enabled)
         return _to_user(record)
 
     def set_admin(self, email, is_admin):

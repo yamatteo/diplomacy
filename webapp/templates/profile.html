@@ -25,6 +25,15 @@
     <button>{{ _('Change language') }}</button>
   </form>
 
+  <h2>{{ _('Order style') }}</h2>
+  <form method="post" action="{{ url_for('game.profile_orders_style') }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label><input type="checkbox" name="explicit_orders" value="yes" {% if g.user.explicit_orders %}checked{% endif %}>
+      {{ _('Describe orders in words (Army Paris (PAR) moves to Burgundy (BUR)) instead of the traditional notation (A PAR - BUR)') }}</label>
+    <button>{{ _('Save') }}</button>
+  </form>
+  <p class="muted">{{ _('Only changes how orders are shown to you. The map always shows the abbreviations, which stay in brackets.') }}</p>
+
   <h2>{{ _('Order simulator') }}</h2>
   <form method="post" action="{{ url_for('game.profile_sandbox') }}">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">

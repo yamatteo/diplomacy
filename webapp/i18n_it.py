@@ -3,11 +3,30 @@
     Terms follow the Italian rulebook (webapp/regole.pdf): centro di approvvigionamento, appoggio, trasporto via
     mare, ritirata, scioglimento / sciogliere, costruzione, stallo, sloggiata, armata, flotta, unità, parità.
     Exception: "Fall" is Autunno (the rulebook's "Fine del 1901" could be confused with the winter adjustments).
-    Order notation and province abbreviations stay English (A PAR - BUR, S, C, VIA) in both languages.
+    Order notation and province abbreviations stay English (A PAR - BUR, S, C, VIA) in both languages; the readable
+    descriptions of orders (webapp/notation.py, a profile switch) are translated, with the province names of PROVINCES.
 """
 
 POWERS = {'AUSTRIA': 'Austria', 'ENGLAND': 'Inghilterra', 'FRANCE': 'Francia', 'GERMANY': 'Germania',
           'ITALY': 'Italia', 'RUSSIA': 'Russia', 'TURKEY': 'Turchia'}
+PROVINCES = {
+    'ADR': 'Mare Adriatico', 'AEG': 'Mar Egeo', 'ALB': 'Albania', 'ANK': 'Ankara', 'APU': 'Puglia',
+    'ARM': 'Armenia', 'BAL': 'Mar Baltico', 'BAR': 'Mare di Barents', 'BEL': 'Belgio', 'BER': 'Berlino',
+    'BLA': 'Mar Nero', 'BOH': 'Boemia', 'BOT': 'Golfo di Botnia', 'BRE': 'Brest', 'BUD': 'Budapest',
+    'BUL': 'Bulgaria', 'BUR': 'Borgogna', 'CLY': 'Clyde', 'CON': 'Costantinopoli', 'DEN': 'Danimarca',
+    'EAS': 'Mar Mediterraneo orientale', 'EDI': 'Edimburgo', 'ENG': 'Canale della Manica', 'FIN': 'Finlandia',
+    'GAL': 'Galizia', 'GAS': 'Guascogna', 'GRE': 'Grecia', 'HEL': 'Baia di Helgoland', 'HOL': 'Olanda',
+    'ION': 'Mare Jonio', 'IRI': "Mare d'Irlanda", 'KIE': 'Kiel', 'LON': 'Londra', 'LVN': 'Livonia',
+    'LVP': 'Liverpool', 'LYO': 'Golfo del Leone', 'MAO': 'Oceano Atlantico centrale', 'MAR': 'Marsiglia',
+    'MOS': 'Mosca', 'MUN': 'Monaco', 'NAF': 'Africa del Nord', 'NAO': 'Oceano Atlantico settentrionale',
+    'NAP': 'Napoli', 'NTH': 'Mare del Nord', 'NWG': 'Mare di Norvegia', 'NWY': 'Norvegia', 'PAR': 'Parigi',
+    'PIC': 'Piccardia', 'PIE': 'Piemonte', 'POR': 'Portogallo', 'PRU': 'Prussia', 'ROM': 'Roma', 'RUH': 'Ruhr',
+    'RUM': 'Romania', 'SER': 'Serbia', 'SEV': 'Sebastopoli', 'SIL': 'Slesia', 'SKA': 'Skagerrak',
+    'SMY': 'Smirne', 'SPA': 'Spagna', 'STP': 'S. Pietroburgo', 'SWE': 'Svezia', 'SWI': 'Svizzera',
+    'SYR': 'Siria', 'TRI': 'Trieste', 'TUN': 'Tunisi', 'TUS': 'Toscana', 'TYR': 'Tirolo', 'TYS': 'Mar Tirreno',
+    'UKR': 'Ucraina', 'VEN': 'Venezia', 'VIE': 'Vienna', 'WAL': 'Galles', 'WAR': 'Varsavia',
+    'WES': 'Mar Mediterraneo occidentale', 'YOR': 'Yorkshire',
+}
 DAYS = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom']
 MONTHS = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic']
 
@@ -69,6 +88,30 @@ MESSAGES = {
         'cambiano.',
     'Order simulator turned on.': 'Simulatore di ordini attivato.',
     'Order simulator turned off.': 'Simulatore di ordini disattivato.',
+    'Order style': 'Stile degli ordini',
+    'Describe orders in words (Army Paris (PAR) moves to Burgundy (BUR)) instead of the traditional notation '
+    '(A PAR - BUR)':
+        'Descrivi gli ordini a parole (Armata Parigi (PAR) muove a Borgogna (BUR)) invece della notazione '
+        'tradizionale (A PAR - BUR)',
+    'Only changes how orders are shown to you. The map always shows the abbreviations, which stay in brackets.':
+        'Cambia solo il modo in cui vedi gli ordini. La mappa mostra sempre le abbreviazioni, che restano tra '
+        'parentesi.',
+    'Orders will be described in words.': 'Gli ordini saranno descritti a parole.',
+    'Orders will be shown in the traditional notation.': 'Gli ordini saranno mostrati nella notazione tradizionale.',
+
+    # Orders in words (webapp/notation.py)
+    'north coast': 'costa nord', 'south coast': 'costa sud', 'east coast': 'costa est', 'west coast': 'costa ovest',
+    'Army %(loc)s': 'Armata %(loc)s',
+    'Fleet %(loc)s': 'Flotta %(loc)s',
+    'Build Army at %(loc)s': 'Costruzione di Armata a %(loc)s',
+    'Build Fleet at %(loc)s': 'Costruzione di Flotta a %(loc)s',
+    'disbands': 'si scioglie',
+    'retreats to %(dest)s': 'si ritira a %(dest)s',
+    'moves to %(dest)s': 'muove a %(dest)s',
+    'moves to %(dest)s via convoy': 'muove a %(dest)s via mare',
+    'supports %(other)s to hold': 'appoggia %(other)s a tenere la posizione',
+    'supports %(other)s to %(dest)s': 'appoggia %(other)s verso %(dest)s',
+    'convoys %(other)s to %(dest)s': 'trasporta %(other)s a %(dest)s via mare',
     'The order simulator is off. Turn it on in your profile.':
         'Il simulatore di ordini è disattivato. Attivalo nel tuo profilo.',
     'The previous simulation is still running: try again in a moment.':
